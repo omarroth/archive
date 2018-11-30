@@ -1,0 +1,6 @@
+db:
+  user: kemal
+  password: kemal
+  host: localhost
+  port: 5432
+  dbname: archive
