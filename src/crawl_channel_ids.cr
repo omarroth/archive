@@ -4,7 +4,7 @@ require "option_parser"
 require "pg"
 require "uri"
 require "xml"
-require "./archive/helpers/*"
+require "./archive/*"
 
 CONFIG = Config.from_yaml(File.read("config/config.yml"))
 
@@ -49,12 +49,12 @@ loop do
           related_channels = [] of String
         end
 
-        PG_DB.exec("INSERT INTO channels VALUES ($1, $2) ON CONFLICT (ucid) DO UPDATE SET finished = true", current, true)
         if !related_channels.empty?
           related_channels = related_channels.map { |channel| "('#{channel}', false)" }.join(",")
           PG_DB.exec("INSERT INTO channels VALUES #{related_channels} ON CONFLICT DO NOTHING")
         end
 
+        PG_DB.exec("UPDATE channels SET finished = true WHERE ucid = $1", current)
         active_channel.send(true)
       end
 

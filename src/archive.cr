@@ -16,7 +16,7 @@
 
 require "kemal"
 require "pg"
-require "./archive/helpers/*"
+require "./archive/*"
 
 CONFIG = Config.from_yaml(File.read("config/config.yml"))
 
