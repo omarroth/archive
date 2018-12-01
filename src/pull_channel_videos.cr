@@ -43,31 +43,26 @@ loop do
 
       active_threads += 1
       spawn do
-        page = 1
-        client = HTTP::Client.new(YT_URL)
         ids = [] of String
+        playlists = fetch_playlists(ucid)
 
-        loop do
-          url = produce_playlist_url(ucid, page)
-          response = client.get(url)
+        playlists.each do |playlist|
+          page = 1
+          client = HTTP::Client.new(YT_URL)
 
-          done = false
-          response.body.scan(/vi\\\/(?<video_id>[a-zA-Z0-9_-]{11})/) do |match|
-            if ids.includes? match["video_id"]
-              done = true
-              break
+          loop do
+            url = produce_playlist_url(playlist, page)
+            response = client.get(url)
+
+            response.body.scan(/vi\\\/(?<video_id>[a-zA-Z0-9_-]{11})/) do |match|
+              ids << match["video_id"]
             end
 
-            ids << match["video_id"]
+            page += 1
           end
-
-          if done
-            break
-          end
-
-          page += 1
         end
 
+        ids.uniq!
         video_count = ids.size
         if !ids.empty?
           ids = ids.map { |video| "('#{video}', false)" }.join(",")
@@ -199,4 +194,31 @@ def write_var_int(value : Int)
   end
 
   return bytes
+end
+
+def fetch_playlists(ucid)
+  client = HTTP::Client.new(YT_URL)
+  response = client.get("/channel/#{ucid}/playlists?disable_polymer=1")
+  playlists = [] of String
+
+  response.body.scan(/\/playlist\?list=(?<playlist_id>[^"]+)/) do |match|
+    playlists << match["playlist_id"]
+  end
+
+  loop do
+    if match = response.body.match(/\/browse_ajax\?[^"]+/)
+      continuation = match[0]
+      response = client.get("/channel/#{ucid}/playlists?disable_polymer=1")
+
+      response.body.scan(/\/playlist\?list=(?<playlist_id>[^"]+)/) do |match|
+        playlists << match["playlist_id"]
+      end
+    else
+      break
+    end
+  end
+
+  playlists << ucid
+
+  return playlists
 end
