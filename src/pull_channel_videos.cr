@@ -61,6 +61,10 @@ loop do
             ids << match["video_id"]
           end
 
+          if response.body.scan(/vi\\\/(?<video_id>[a-zA-Z0-9_-]{11})/).size == 0
+            done = true
+          end
+
           if page == 100
             done = true
           end
@@ -73,11 +77,11 @@ loop do
         end
 
         playlist_ids = [] of String
-        page = 1
+        index = 0
         client = HTTP::Client.new(YT_URL)
 
         loop do
-          url = produce_playlist_url(ucid, page)
+          url = produce_playlist_url(ucid, index)
           response = client.get(url)
 
           done = false
@@ -99,7 +103,7 @@ loop do
             break
           end
 
-          page += 1
+          index += 100
         end
 
         ids.uniq!
