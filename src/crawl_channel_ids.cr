@@ -31,9 +31,9 @@ active_threads = 0
 active_channel = Channel(Bool).new
 
 loop do
-  PG_DB.query("SELECT ucid FROM channels WHERE finished = false") do |rs|
+  PG_DB.query("SELECT ucid FROM channels WHERE finished = false OR joined IS NULL") do |rs|
     rs.each do
-      current = rs.read(String)
+      ucid = rs.read(String)
 
       if active_threads >= max_threads
         if active_channel.receive
@@ -43,18 +43,39 @@ loop do
 
       active_threads += 1
       spawn do
+        client = HTTP::Client.new(YT_URL)
+
         begin
-          related_channels = pull_related_channels(current)
+          response = client.get("/channel/#{ucid}/about?disable_polymer=1")
+          body = response.body
+          status_code = response.status_code
         rescue ex
-          related_channels = [] of String
+          body ||= "<html></html>"
+          status_code ||= 500
         end
 
-        if !related_channels.empty?
-          related_channels = related_channels.map { |channel| "('#{channel}', false)" }.join(",")
-          PG_DB.exec("INSERT INTO channels VALUES #{related_channels} ON CONFLICT DO NOTHING")
-        end
+        if status_code == 200
+          response = XML.parse_html(body)
 
-        PG_DB.exec("UPDATE channels SET finished = true WHERE ucid = $1", current)
+          joined = response.xpath_node(%q(//span[contains(text(), "Joined")]))
+          if joined
+            joined = Time.parse(joined.content.lchop("Joined "), "%b %-d, %Y", Time::Location.local)
+          end
+          joined ||= Time.now
+
+          related_channels = response.xpath_nodes(%q(//div[contains(@class, "branded-page-related-channels")]/ul/li))
+          related_channels = related_channels.map do |node|
+            node["data-external-id"]
+          end
+          related_channels ||= [] of String
+
+          if !related_channels.empty?
+            related_channels = related_channels.map { |channel| "('#{channel}', false)" }.join(",")
+            PG_DB.exec("INSERT INTO channels VALUES #{related_channels} ON CONFLICT DO NOTHING")
+          end
+
+          PG_DB.exec("UPDATE channels SET finished = true, joined = $2 WHERE ucid = $1", ucid, joined)
+        end
         active_channel.send(true)
       end
 
