@@ -72,8 +72,8 @@ loop do
         active_channel.send(true)
       end
 
-      remaining = PG_DB.query_one("SELECT count(*) FROM channels WHERE video_count IS NULL", as: Int64)
-      finished = PG_DB.query_one("SELECT count(*) FROM channels WHERE video_count IS NOT NULL", as: Int64)
+      remaining = PG_DB.query_one("SELECT count(*) FROM channels WHERE video_count IS NULL AND joined < '2017-06-01'", as: Int64)
+      finished = PG_DB.query_one("SELECT count(*) FROM channels WHERE video_count IS NOT NULL AND joined < '2017-06-01'", as: Int64)
       print "Remaining: #{remaining}, processed: #{finished}\r"
     end
   end
