@@ -51,12 +51,12 @@ loop do
           url = produce_channel_videos_url(ucid, page)
           response = client.get(url)
 
-          response.body.scan(/watch\?v=[a-zA-Z0-9_-]{11}/) do |match|
-            if ids.includes? match[0]
+          response.body.scan(/\/watch\?v=(?<video_id>[a-zA-Z0-9_-]{11})/) do |match|
+            if ids.includes? match["video_id"]
               break
             end
 
-            ids << match[0]
+            ids << match["video_id"]
           end
 
           page += 1
