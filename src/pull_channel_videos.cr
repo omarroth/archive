@@ -31,7 +31,7 @@ active_threads = 0
 active_channel = Channel(Bool).new
 
 loop do
-  PG_DB.query("SELECT ucid FROM channels WHERE video_count IS NULL") do |rs|
+  PG_DB.query("SELECT ucid FROM channels WHERE video_count IS NULL AND joined < '2017-06-01'") do |rs|
     rs.each do
       ucid = rs.read(String)
 
