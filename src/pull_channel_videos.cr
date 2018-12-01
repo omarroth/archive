@@ -55,7 +55,7 @@ loop do
             ids << match[0]
           end
 
-          if response.body.scan(/watch\?v=[a-zA-Z0-9_-]{11}/).size < 30
+          if response.body.scan(/watch\?v=[a-zA-Z0-9_-]{11}/).size == 0
             break
           end
 
