@@ -31,7 +31,7 @@ active_threads = 0
 active_channel = Channel(Bool).new
 
 loop do
-  PG_DB.query("SELECT id FROM videos WHERE finished = false") do |rs|
+  PG_DB.query("SELECT id FROM videos WHERE finished = false OR published IS NULL") do |rs|
     rs.each do
       id = rs.read(String)
 
@@ -56,6 +56,12 @@ loop do
           body ||= ""
           html ||= XML.parse_html("<html></html>")
         end
+
+        published = html.xpath_node(%q(//meta[@itemprop="datePublished"])).try &.["content"]
+        if published
+          published = Time.parse(published, "%Y-%m-%d", Time::Location.local)
+        end
+        published ||= Time.now
 
         recommended_videos = html.xpath_nodes(%q(//*[@data-vid])).map do |node|
           node["data-vid"]
@@ -108,7 +114,7 @@ loop do
           end
         end
 
-        PG_DB.exec("UPDATE videos SET finished = true WHERE id = $1", id)
+        PG_DB.exec("UPDATE videos SET finished = true, published = $2 WHERE id = $1", id, published)
         active_channel.send(true)
       end
 
