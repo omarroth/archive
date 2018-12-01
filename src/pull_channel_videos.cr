@@ -44,37 +44,62 @@ loop do
       active_threads += 1
       spawn do
         ids = [] of String
-        playlists = fetch_playlists(ucid)
+        page = 1
+        client = HTTP::Client.new(YT_URL)
 
-        playlists.each do |playlist|
-          page = 1
-          client = HTTP::Client.new(YT_URL)
-          playlist_ids = [] of String
+        loop do
+          url = produce_channel_videos_url(ucid, page)
+          response = client.get(url)
 
-          loop do
-            url = produce_playlist_url(playlist, page)
-            response = client.get(url)
-
-            done = false
-            response.body.scan(/vi\\\/(?<video_id>[a-zA-Z0-9_-]{11})/) do |match|
-              if playlist_ids.includes? match["video_id"]
-                done = true
-                break
-              end
-              playlist_ids << match["video_id"]
-            end
-
-            if response.body.scan(/vi\\\/(?<video_id>[a-zA-Z0-9_-]{11})/).size < 100
+          done = false
+          response.body.scan(/vi\\\/(?<video_id>[a-zA-Z0-9_-]{11})/) do |match|
+            if ids.includes? match["video_id"]
               done = true
-            end
-
-            if done
-              ids |= playlist_ids
               break
             end
 
-            page += 1
+            ids << match["video_id"]
           end
+
+          if page == 100
+            done = true
+          end
+
+          if done
+            break
+          end
+
+          page += 1
+        end
+
+        playlist_ids = [] of String
+        page = 1
+        client = HTTP::Client.new(YT_URL)
+
+        loop do
+          url = produce_playlist_url(ucid, page)
+          response = client.get(url)
+
+          done = false
+          response.body.scan(/vi\\\/(?<video_id>[a-zA-Z0-9_-]{11})/) do |match|
+            if playlist_ids.includes? match["video_id"]
+              done = true
+              break
+            end
+
+            playlist_ids << match["video_id"]
+          end
+
+          if response.body.scan(/vi\\\/(?<video_id>[a-zA-Z0-9_-]{11})/).size < 100
+            done = true
+          end
+
+          if done
+            ids |= playlist_ids
+            break
+          end
+
+          page += 1
         end
 
         ids.uniq!
