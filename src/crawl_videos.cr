@@ -104,8 +104,8 @@ loop do
           response = client.post("/comment_service_ajax?action_get_comments=1&pbj=1&ctoken=#{ctoken}&continuation=#{ctoken}&itct=#{itct}&hl=en&gl=US", headers, request)
 
           ucids = [] of String
-          response.body.scan(/"UC[a-zA-Z0-9_-]{22}"/) do |match|
-            ucids << match[0]
+          response.body.scan(/"(?<channel_id>UC[a-zA-Z0-9_-]{22})"/) do |match|
+            ucids << match["channel_id"]
           end
 
           if !ucids.empty?
