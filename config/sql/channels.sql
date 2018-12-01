@@ -1,6 +1,7 @@
 CREATE TABLE public.channels (
     ucid text NOT NULL,
-    finished boolean
+    finished boolean,
+    video_count integer
 );
 
 ALTER TABLE ONLY public.channels
