@@ -27,8 +27,6 @@ OptionParser.parse! do |parser|
   parser.on("-t THREADS", "--threads=THREADS", "Number of threads to use for crawling") { |threads| max_threads = threads.to_i }
 end
 
-puts "https://www.youtube.com#{produce_channel_videos_url("UCcesEvuN9wVDGgGs1V4xc8g", 100)}"
-
 active_threads = 0
 active_channel = Channel(Bool).new
 
