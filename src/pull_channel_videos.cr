@@ -27,6 +27,8 @@ OptionParser.parse! do |parser|
   parser.on("-t THREADS", "--threads=THREADS", "Number of threads to use for crawling") { |threads| max_threads = threads.to_i }
 end
 
+puts "https://www.youtube.com#{produce_channel_videos_url("UCcesEvuN9wVDGgGs1V4xc8g", 100)}"
+
 active_threads = 0
 active_channel = Channel(Bool).new
 
@@ -52,11 +54,11 @@ loop do
           response = client.get(url)
 
           response.body.scan(/watch\?v=[a-zA-Z0-9_-]{11}/) do |match|
-            ids << match[0]
-          end
+            if ids.includes? match[0]
+              break
+            end
 
-          if response.body.scan(/watch\?v=[a-zA-Z0-9_-]{11}/).size == 0
-            break
+            ids << match[0]
           end
 
           page += 1
