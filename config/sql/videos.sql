@@ -1,6 +1,8 @@
 CREATE TABLE public.videos (
     id text NOT NULL,
-    finished boolean
+    finished boolean,
+    annotations xml,
+    published date
 );
 
 ALTER TABLE ONLY public.videos
