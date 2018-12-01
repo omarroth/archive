@@ -49,13 +49,28 @@ loop do
         playlists.each do |playlist|
           page = 1
           client = HTTP::Client.new(YT_URL)
+          playlist_ids = [] of String
 
           loop do
             url = produce_playlist_url(playlist, page)
             response = client.get(url)
 
+            done = false
             response.body.scan(/vi\\\/(?<video_id>[a-zA-Z0-9_-]{11})/) do |match|
-              ids << match["video_id"]
+              if playlist_ids.includes? match["video_id"]
+                done = true
+                break
+              end
+              playlist_ids << match["video_id"]
+            end
+
+            if response.body.scan(/vi\\\/(?<video_id>[a-zA-Z0-9_-]{11})/).size < 100
+              done = true
+            end
+
+            if done
+              ids |= playlist_ids
+              break
             end
 
             page += 1
