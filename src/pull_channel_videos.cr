@@ -48,15 +48,21 @@ loop do
         ids = [] of String
 
         loop do
-          url = produce_channel_videos_url(ucid, page)
+          url = produce_playlist_url(ucid, page)
           response = client.get(url)
 
-          response.body.scan(/\/watch\?v=(?<video_id>[a-zA-Z0-9_-]{11})/) do |match|
+          done = false
+          response.body.scan(/vi\\\/(?<video_id>[a-zA-Z0-9_-]{11})/) do |match|
             if ids.includes? match["video_id"]
+              done = true
               break
             end
 
             ids << match["video_id"]
+          end
+
+          if done
+            break
           end
 
           page += 1
@@ -135,4 +141,62 @@ def produce_channel_videos_url(ucid, page = 1, auto_generated = nil, sort_by = "
   url = "/browse_ajax?continuation=#{continuation}&gl=US&hl=en"
 
   return url
+end
+
+def produce_playlist_url(id, index)
+  if id.starts_with? "UC"
+    id = "UU" + id.lchop("UC")
+  end
+  ucid = "VL" + id
+
+  meta = [0x08_u8] + write_var_int(index)
+  meta = Slice.new(meta.to_unsafe, meta.size)
+  meta = Base64.urlsafe_encode(meta, false)
+  meta = "PT:#{meta}"
+
+  wrapped = "\x7a"
+  wrapped += meta.bytes.size.unsafe_chr
+  wrapped += meta
+
+  wrapped = Base64.urlsafe_encode(wrapped)
+  meta = URI.escape(wrapped)
+
+  continuation = "\x12"
+  continuation += ucid.size.unsafe_chr
+  continuation += ucid
+  continuation += "\x1a"
+  continuation += meta.bytes.size.unsafe_chr
+  continuation += meta
+
+  continuation = continuation.size.to_u8.unsafe_chr + continuation
+  continuation = "\xe2\xa9\x85\xb2\x02" + continuation
+
+  continuation = Base64.urlsafe_encode(continuation)
+  continuation = URI.escape(continuation)
+
+  url = "/browse_ajax?continuation=#{continuation}"
+
+  return url
+end
+
+def write_var_int(value : Int)
+  bytes = [] of UInt8
+  value = value.to_u32
+
+  if value == 0
+    bytes = [0_u8]
+  else
+    while value != 0
+      temp = (value & 0b01111111).to_u8
+      value = value >> 7
+
+      if value != 0
+        temp |= 0b10000000
+      end
+
+      bytes << temp
+    end
+  end
+
+  return bytes
 end
