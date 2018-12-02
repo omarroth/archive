@@ -1,7 +1,10 @@
 {
 	"inv": "http://localhost:3000",
 	"master": "http://localhost:4000",
-	"worker": "aa9c55a3bd2ef6463c618bbf016687c03b98990364254d98425a90e450bed5c5",
-	"channelJobs": 3,
-	"channelFetchLimit": 10
+	"channelJobs": 2,
+	"channelFetchLimit": 10,
+	"videoJobs": 4,
+	"videoFetchLimit": 50,
+	"annotationSubmissionThreshold": 50,
+	"keepAliveInterval": 270000
 }

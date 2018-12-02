@@ -3,7 +3,9 @@
 /bin/
 /.shards/
 *.dwarf
+
 .vscode
 *.code-workspace
 **/node_modules
 *.db
+*.db-journal

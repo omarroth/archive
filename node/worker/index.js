@@ -3,9 +3,6 @@ const events = require("events");
 
 const config = require("./config.json");
 
-let _nextID = 0;
-let nextID = () => ++_nextID;
-
 class SendableObject {
 	constructor(url, object) {
 		this._cso = true;
@@ -32,19 +29,22 @@ class Worker {
 		this.ready = false;
 		this.pendingChannels = [];
 		this.channelProcesses = [];
+		this.pendingVideos = [];
+		this.videoProcesses = [];
 	}
 	run() {
 		while (this.channelProcesses.length < this.config.channelJobs) this.channelProcesses.push(new ChannelProcess(this));
+		while (this.videoProcesses.length < this.config.videoJobs) this.videoProcesses.push(new VideoProcess(this));
 	}
 	request(url, object) {
 		return new Promise(resolve => {
 			let so = new SendableObject(url, object);
 			so.object.json = true;
 			so.object.url = (this.config.master+so.object.url).replace(/[^:]\/{2,}/g, "/");
+			//console.log("» "+so.object.url);
 			rp(so.object).then(data => {
 				if (data && typeof(data) == "object" && data.status != "success") throw JSON.stringify(data);
-				console.log("» "+so.object.url);
-				console.log("« "+JSON.stringify(data));
+				//console.log("« "+JSON.stringify(data));
 				resolve(data);
 			});
 		});
@@ -66,37 +66,50 @@ class Worker {
 		}
 	}
 	recommendedChannels(limit) {
-		console.log("Recommended channels request");
+		console.log("Fetching new channels");
+		//console.log("Recommended channels request");
 		if (!this._recommendedChannelsProcess) this._recommendedChannelsProcess = new Promise(resolve => {
-			console.log("Actually performing request");
+			//console.log("Actually performing request");
 			this.workerRequest("/api/channels?limit="+(limit || this.config.channelFetchLimit || 1)).then(response => {
 				this.pendingChannels = this.pendingChannels.concat(response.channels);
 				this._recommendedChannelsProcess = null;
-				console.log("Request complete");
+				//console.log("Request complete");
 				resolve();
 			});
 		});
 		return this._recommendedChannelsProcess;
+	}
+	recommendedVideos(limit) {
+		console.log("Fetching new videos");
+		return this.workerRequest("/api/videos?limit="+(limit || this.config.videoFetchLimit || 50)).then(response => {
+			this.pendingVideos = this.pendingVideos.concat(response.videos);
+		});
 	}
 }
 
 class ChannelProcess {
 	constructor(worker) {
 		this.worker = worker;
-		this.events = new events.EventEmitter();
-		this.id = nextID();
 		this.run();
 	}
 	async run() {
 		while (true) {
-			console.log("STARTING! ID: "+this.id);
 			if (!this.worker.pendingChannels.length) await this.worker.recommendedChannels();
 			let channel = this.worker.pendingChannels.shift();
-			console.log("CHANNELS! ID: "+this.id+" CHANNEL: "+channel);
 			await this.fetchChannel(channel);
 		}
 	}
+	abort(channel) {
+		console.log("Aborting channel "+channel);
+		return this.worker.workerRequest("/api/channels/abort", {body: [channel]});
+	}
+	ping(channel) {
+		console.log("Pinging channel "+channel);
+		return this.worker.workerRequest("/api/channels/ping", {body: [channel]});
+	}
 	fetchChannel(channel) {
+		console.log("Fetching channel "+channel);
+		let startedAt = Date.now();
 		return new Promise(resolve => {
 			let videoIDs = [];
 			let pageNumber = 0;
@@ -114,23 +127,28 @@ class ChannelProcess {
 				}
 			}).then(body => {
 				let managePage = (page) => {
+					if (Date.now()-startedAt > this.worker.config.keepAliveInterval) this.ping(channel);
 					pageNumber++;
 					let token = page[1].xsrf_token;
 					let continuation = undefined;
 					if (page[1].response.contents) {
-						if (page[1].response.contents.twoColumnBrowseResultsRenderer.tabs[1].tabRenderer.content.sectionListRenderer.contents[0].itemSectionRenderer.contents[0].gridRenderer.continuations) continuation = page[1].response.contents.twoColumnBrowseResultsRenderer.tabs[1].tabRenderer.content.sectionListRenderer.contents[0].itemSectionRenderer.contents[0].gridRenderer.continuations[0].nextContinuationData.continuation;
+						if (page[1].response.contents.twoColumnBrowseResultsRenderer.tabs[1].tabRenderer.content.sectionListRenderer.contents[0].itemSectionRenderer.contents[0].messageRenderer) {
+							// ...messageRenderer.text.simpleText = "This channel has no videos."
+							resolve(videoIDs);
+							return;
+						} else if (page[1].response.contents.twoColumnBrowseResultsRenderer.tabs[1].tabRenderer.content.sectionListRenderer.contents[0].itemSectionRenderer.contents[0].gridRenderer.continuations) continuation = page[1].response.contents.twoColumnBrowseResultsRenderer.tabs[1].tabRenderer.content.sectionListRenderer.contents[0].itemSectionRenderer.contents[0].gridRenderer.continuations[0].nextContinuationData.continuation;
 						let videos = page[1].response.contents.twoColumnBrowseResultsRenderer.tabs[1].tabRenderer.content.sectionListRenderer.contents[0].itemSectionRenderer.contents[0].gridRenderer.items;
 						for (let video of videos) {
 							videoIDs.push(video.gridVideoRenderer.videoId);
 						}
-						console.log("Page: "+pageNumber+", video count: "+videos.length+" → "+videoIDs.length+", continuation token: "+String(continuation).slice(0, 14));
+						//console.log("Page: "+pageNumber+", video count: "+videos.length+" → "+videoIDs.length+", continuation token: "+String(continuation).slice(0, 14));
 					} else if (page[1].response.continuationContents) {
 						if (page[1].response.continuationContents.gridContinuation.continuations) continuation = page[1].response.continuationContents.gridContinuation.continuations[0].nextContinuationData.continuation;
 						let videos = page[1].response.continuationContents.gridContinuation.items;
 						for (let video of videos) {
 							videoIDs.push(video.gridVideoRenderer.videoId);
 						}
-						console.log("Page: "+pageNumber+", video count: "+videos.length+" → "+videoIDs.length+", continuation token: "+String(continuation).slice(0, 14));
+						//console.log("Page: "+pageNumber+", video count: "+videos.length+" → "+videoIDs.length+", continuation token: "+String(continuation).slice(0, 14));
 					}
 					if (continuation) {
 						let so = new SendableObject({
@@ -151,7 +169,7 @@ class ChannelProcess {
 						rp(so.object).then(body => {
 							managePage(body);
 						}).catch(err => {
-							throw err;
+							this.abort(channel);
 						});
 					} else if (pageNumber >= 100) {
 						rp("https://www.youtube.com/channel/UC--i2rV5NCxiEIPefr3l-zQ/playlists/NC").then(playlistBody => {
@@ -160,6 +178,7 @@ class ChannelProcess {
 							let playlistID = lines[uploadsIndex+4].match(/list=(.*?)"/)[1];
 							let page = 0;
 							let managePlaylistPage = () => {
+								if (Date.now()-startedAt > this.worker.config.keepAliveInterval) this.ping(channel);
 								page++;
 								rp(this.worker.config.inv+"/api/v1/playlists/"+playlistID+"?page="+page, {json: true}).then(data => {
 									if (data.videos.length == 0) {
@@ -168,14 +187,14 @@ class ChannelProcess {
 										for (let video of data.videos) {
 											videoIDs.push(video.videoId);
 										}
-										console.log("Invidious page: "+page+", video count: "+data.videos.length+" → "+videoIDs.length);
+										//console.log("Invidious page: "+page+", video count: "+data.videos.length+" → "+videoIDs.length);
 										managePlaylistPage();
 									}
 								});
 							}
 							managePlaylistPage();
 						}).catch(err => {
-							throw err;
+							this.abort(channel);
 						});
 					} else {
 						resolve(videoIDs);
@@ -187,12 +206,45 @@ class ChannelProcess {
 			videoIDs = videoIDs.filter((v, i) => (!videoIDs.slice(0, i).includes(v)));
 			let body = {};
 			body[channel] = videoIDs;
+			console.log("Submitting channel "+channel);
 			await this.worker.workerRequest("/api/channels", {body});
 		}).catch(err => {
-			console.log(err);
-			console.log(channel);
-			process.exit();
+			this.abort(channel);
 		});
+	}
+}
+
+class VideoProcess {
+	constructor(worker) {
+		this.worker = worker;
+		this.pendingAnnotations = [];
+		this.run();
+	}
+	async run() {
+		while (true) {
+			if (!this.worker.pendingVideos.length) await this.worker.recommendedVideos();
+			if (this.worker.pendingVideos.length) {
+				let video = this.worker.pendingVideos.shift();
+				let result = await this.fetchAnnotations(video);
+				this.pendingAnnotations.push([video, result]);
+				//console.log("New annotation count: "+this.pendingAnnotations.length);
+				if (this.pendingAnnotations.length >= this.worker.config.annotationSubmissionThreshold) {
+					let toSubmit = this.pendingAnnotations;
+					this.pendingAnnotations = [];
+					let body = {};
+					for (let item of toSubmit) {
+						body[item[0]] = item[1];
+					}
+					console.log("Submitting videos");
+					this.worker.workerRequest("/api/videos", {body});
+				}
+			} else {
+				await new Promise(resolve => setTimeout(resolve, 6000));
+			}
+		}
+	}
+	fetchAnnotations(video) {
+		return rp("https://www.youtube.com/annotations_invideo?video_id="+video);
 	}
 }
 
