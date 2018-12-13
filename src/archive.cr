@@ -34,23 +34,30 @@ PG_URL = URI.new(
 PG_DB      = DB.open PG_URL
 BATCH_SIZE = 10000
 
-index = 0
-get "/batch" do |env|
-  size = env.params.query["size"]?.try &.to_i?
-  size ||= BATCH_SIZE
+begin
+  PG_DB.exec("BEGIN WORK")
+  PG_DB.exec("DECLARE C CURSOR FOR SELECT id FROM videos")
 
-  env.response.content_type = "application/json"
+  index = 0
+  get "/batch" do |env|
+    size = env.params.query["size"]?.try &.to_i?
+    size ||= BATCH_SIZE
 
-  response = PG_DB.query_all("SELECT id FROM videos LIMIT $1 OFFSET $2", size, index, as: String)
-  index += response.size
+    env.response.content_type = "application/json"
 
-  response.to_json
+    response = PG_DB.query_all("FETCH #{size} FROM C", as: String)
+    index += response.size
+
+    response.to_json
+  end
+
+  get "/current_index" do |env|
+    env.response.content_type = "application/json"
+    {"index" => index}.to_json
+  end
+
+  gzip true
+  Kemal.run
+ensure
+  PG_DB.exec("COMMIT WORK")
 end
-
-get "/current_index" do |env|
-  env.response.content_type = "application/json"
-  {"index" => index}.to_json
-end
-
-gzip true
-Kemal.run
