@@ -14,6 +14,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+require "awscr-s3"
+require "json"
 require "kemal"
 require "pg"
 require "./archive/*"
@@ -29,5 +31,21 @@ PG_URL = URI.new(
   path: CONFIG.db[:dbname],
 )
 
-PG_DB  = DB.open PG_URL
-YT_URL = URI.parse("https://www.youtube.com")
+PG_DB      = DB.open PG_URL
+BATCH_SIZE = 10000
+
+index = 0
+get "/batch" do |env|
+  size = env.params.query["size"]?.try &.to_i?
+  size ||= BATCH_SIZE
+
+  env.response.content_type = "application/json"
+
+  response = PG_DB.query_all("SELECT id FROM videos LIMIT $1 OFFSET $2", size, index, as: String).to_json
+  index += size
+
+  response
+end
+
+gzip true
+Kemal.run
