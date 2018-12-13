@@ -1,9 +1,3 @@
-db:
-  user: kemal
-  password: kemal
-  host: localhost
-  port: 5432
-  dbname: archive
 access_key: REPLACE_WITH_ACCESS_KEY
 secret_key: REPLACE_WITH_SECRET_KEY
 batch_url: http://localhost:3000
