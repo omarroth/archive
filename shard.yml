@@ -11,6 +11,10 @@ targets:
 dependencies:
   pg:
     github: will/crystal-pg
+  kemal:
+    github: kemalcr/kemal
+  awscr-s3:
+    github: taylorfinnell/awscr-s3
 
 crystal: 0.27.0
 
