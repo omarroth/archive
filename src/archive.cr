@@ -41,10 +41,15 @@ get "/batch" do |env|
 
   env.response.content_type = "application/json"
 
-  response = PG_DB.query_all("SELECT id FROM videos LIMIT $1 OFFSET $2", size, index, as: String).to_json
-  index += size
+  response = PG_DB.query_all("SELECT id FROM videos LIMIT $1 OFFSET $2", size, index, as: String)
+  index += response.size
 
-  response
+  response.to_json
+end
+
+get "/current_index" do |env|
+  env.response.content_type = "application/json"
+  {"index" => index}.to_json
 end
 
 gzip true
