@@ -20,7 +20,8 @@ PG_DB.exec("BEGIN WORK")
 PG_DB.exec("DECLARE C CURSOR FOR SELECT ctid FROM videos")
 
 count = PG_DB.query_one("SELECT COUNT(*) FROM batches", as: Int64)
-PG_DB.exec("FETCH #{BATCH_SIZE * count} FROM C")
+PG_DB.exec("MOVE #{BATCH_SIZE * count} C")
+puts "Skipped #{count} batches"
 
 i = 0
 loop do
