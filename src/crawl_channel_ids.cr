@@ -61,7 +61,7 @@ loop do
           if joined
             joined = Time.parse(joined.content.lchop("Joined "), "%b %-d, %Y", Time::Location.local)
           end
-          joined ||= Time.now
+          joined ||= "2005-01-01"
 
           related_channels = response.xpath_nodes(%q(//div[contains(@class, "branded-page-related-channels")]/ul/li))
           related_channels = related_channels.map do |node|
