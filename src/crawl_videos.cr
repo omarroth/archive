@@ -57,7 +57,7 @@ loop do
           if published
             published = Time.parse(published, "%Y-%m-%d", Time::Location.local)
           end
-          published ||= Time.now
+          published ||= "2005-01-01"
 
           recommended_videos = html.xpath_nodes(%q(//*[@data-vid])).map do |node|
             node["data-vid"]
