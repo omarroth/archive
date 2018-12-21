@@ -23,13 +23,11 @@ i = 0
 loop do
   batch = PG_DB.query_all("FETCH #{BATCH_SIZE} FROM C", as: Slice(UInt8))
   batch = batch.map do |slice|
-    major = IO::ByteFormat::BigEndian.decode(UInt16, slice)
-    slice += 2
+    major = IO::ByteFormat::BigEndian.decode(UInt32, slice)
+    slice += 4
     minor = IO::ByteFormat::BigEndian.decode(UInt16, slice)
-    slice += 2
-    micro = IO::ByteFormat::BigEndian.decode(UInt16, slice)
 
-    "(#{minor},#{micro})"
+    "(#{major},#{minor})"
   end
 
   if batch.size < BATCH_SIZE
