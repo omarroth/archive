@@ -3,6 +3,7 @@
 /bin/
 /.shards/
 *.dwarf
+shard.lock
 
 .vscode
 *.code-workspace
