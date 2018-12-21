@@ -19,6 +19,9 @@ BATCH_SIZE = 10000
 PG_DB.exec("BEGIN WORK")
 PG_DB.exec("DECLARE C CURSOR FOR SELECT ctid FROM videos")
 
+count = PG_DB.query_one("SELECT COUNT(*) FROM batches", as: Int64)
+PG_DB.exec("FETCH #{BATCH_SIZE * count} FROM C")
+
 i = 0
 loop do
   batch = PG_DB.query_all("FETCH #{BATCH_SIZE} FROM C", as: Slice(UInt8))
