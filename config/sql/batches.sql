@@ -1,5 +1,5 @@
 CREATE TABLE public.batches (
-    id text NOT NULL,
+    id uuid NOT NULL,
     start_ctid text,
     end_ctid text,
     finished boolean

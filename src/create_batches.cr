@@ -42,7 +42,7 @@ loop do
     next
   end
 
-  PG_DB.exec("INSERT INTO batches VALUES ($1, $2, $3)", "#{UUID.random}", batch[0], batch[-1])
+  PG_DB.exec("INSERT INTO batches VALUES ($1, $2, $3)", UUID.random, batch[0], batch[-1])
   i += 1
 
   print "Created #{i} new batches\r"
