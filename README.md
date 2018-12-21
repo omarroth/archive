@@ -4,7 +4,7 @@
 
 # archive
 
-TODO: Write a description here
+Provides scripts for archiving YouTube Annotations.
 
 ## Installation
 
