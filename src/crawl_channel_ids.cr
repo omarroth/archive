@@ -46,7 +46,7 @@ loop do
         client = HTTP::Client.new(YT_URL)
 
         begin
-          response = client.get("/channel/#{ucid}/about?disable_polymer=1")
+          response = client.get("/channel/#{ucid}/about?disable_polymer=1&gl=US&hl=en")
           body = response.body
           status_code = response.status_code
         rescue ex
@@ -88,7 +88,7 @@ end
 
 def pull_related_channels(ucid)
   client = HTTP::Client.new(YT_URL)
-  response = client.get("/channel/#{ucid}?disable_polymer=1")
+  response = client.get("/channel/#{ucid}?disable_polymer=1&gl=US&hl=en")
 
   if response.status_code == 200
     response = XML.parse_html(response.body)

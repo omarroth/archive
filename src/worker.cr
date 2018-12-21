@@ -53,7 +53,7 @@ loop do
     id = id.as_s
 
     begin
-      response = client.get("/annotations_invideo?video_id=#{id}")
+      response = client.get("/annotations_invideo?video_id=#{id}&gl=US&hl=en")
       if response.status_code == 200
         annotations[id] = response.body
       else

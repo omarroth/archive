@@ -213,7 +213,7 @@ def produce_playlist_url(id, index)
   continuation = Base64.urlsafe_encode(continuation)
   continuation = URI.escape(continuation)
 
-  url = "/browse_ajax?continuation=#{continuation}"
+  url = "/browse_ajax?continuation=#{continuation}&gl=US&hl=en"
 
   return url
 end
@@ -242,7 +242,7 @@ end
 
 def fetch_playlists(ucid)
   client = HTTP::Client.new(YT_URL)
-  response = client.get("/channel/#{ucid}/playlists?disable_polymer=1")
+  response = client.get("/channel/#{ucid}/playlists?disable_polymer=1&gl=US&hl=en")
   playlists = [] of String
 
   response.body.scan(/\/playlist\?list=(?<playlist_id>[^"]+)/) do |match|
@@ -252,7 +252,7 @@ def fetch_playlists(ucid)
   loop do
     if match = response.body.match(/\/browse_ajax\?[^"]+/)
       continuation = match[0]
-      response = client.get("/channel/#{ucid}/playlists?disable_polymer=1")
+      response = client.get("/channel/#{ucid}/playlists?disable_polymer=1&gl=US&hl=en")
 
       response.body.scan(/\/playlist\?list=(?<playlist_id>[^"]+)/) do |match|
         playlists << match["playlist_id"]
