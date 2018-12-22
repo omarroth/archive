@@ -33,13 +33,53 @@ PG_URL = URI.new(
 
 PG_DB = DB.open PG_URL
 
-get "/batch" do |env|
+get "/api/batches" do |env|
   env.response.content_type = "application/json"
 
-  start_ctid, end_ctid = PG_DB.query_one("SELECT start_ctid, end_ctid FROM batches WHERE finished = false ORDER BY RANDOM() LIMIT 1", as: {String, String})
-  response = PG_DB.query_all("SELECT id FROM videos WHERE ctid >= $1 AND ctid <= $2", start_ctid, end_ctid, as: String)
+  batch_id, start_ctid, end_ctid = PG_DB.query_one("SELECT id, start_ctid, end_ctid FROM batches WHERE finished = false ORDER BY RANDOM() LIMIT 1", as: {String, String, String})
+  objects = PG_DB.query_all("SELECT id FROM videos WHERE ctid >= $1 AND ctid <= $2", start_ctid, end_ctid, as: String)
 
-  response.to_json
+  response = JSON.build do |json|
+    json.object do
+      json.field "batch_id", batch_id
+      json.field "objects", objects
+    end
+  end
+
+  JSON.parse(response).to_pretty_json
+  # response
+end
+
+post "/api/workers/create" do |env|
+  env.response.content_type = "application/json"
+
+  remote_address = env.as(HTTP::Server::NewContext).remote_address.address
+
+  worker_count = PG_DB.query_one("SELECT count(*) FROM workers WHERE ip = $1", remote_address, as: Int64)
+  if worker_count > 10
+    response = JSON.build do |json|
+      json.object do
+        json.field "error", "Too many workers for IP"
+      end
+    end
+
+    next response
+  end
+
+  worker_id = "#{UUID.random}"
+  PG_DB.exec("INSERT INTO workers VALUES ($1, $2, $3, $4)", worker_id, remote_address, 0, false)
+
+  response = JSON.build do |json|
+    json.object do
+      json.field "worker_id", worker_id
+    end
+  end
+
+  response
+end
+
+post "/api/commit" do |env|
+  # ...
 end
 
 gzip true
