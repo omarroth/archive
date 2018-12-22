@@ -1,4 +1,5 @@
 require "awscr-s3"
+require "digest/md5"
 require "gzip"
 require "http/client"
 require "json"
@@ -13,54 +14,60 @@ REGION          = "sfo2"
 SPACES_ENDPOINT = "https://sfo2.digitaloceanspaces.com"
 YT_URL          = URI.parse("https://www.youtube.com")
 
-batch_size = 10000
-batch_size ||= CONFIG.batch_size
-
 s3 = Awscr::S3::Client.new(REGION, ACCESS_KEY, SECRET_KEY, endpoint: SPACES_ENDPOINT)
+client = HTTP::Client.new(BATCH_URL)
+
+if File.exists? ".worker_id"
+  worker_id = File.read(".worker_id")
+else
+  resp = client.post("/api/workers/create")
+  body = JSON.parse(resp.body)
+
+  if resp.status_code == 200
+    worker_id = body["worker_id"].as_s
+    File.write(".worker_id", worker_id)
+  else
+    raise body["error"].as_s
+  end
+end
 
 loop do
   begin
-    batch_client = HTTP::Client.new(BATCH_URL)
-    batch_response = batch_client.get("/batch")
+    response = client.get("/api/batches")
   rescue ex
     sleep 10.seconds
     next
   end
 
-  if batch_response.status_code == 200
-    ids = JSON.parse(batch_response.body).as_a
+  if response.status_code == 200
+    body = JSON.parse(response.body)
+
+    batch_id = body["batch_id"].as_s
+    objects = body["objects"].as_a
   else
     # Slow down if something went wrong
     sleep 10.seconds
     next
   end
 
-  if ids.empty?
-    break
-  end
-
-  filename = "#{ids[0]}-#{ids[-1]}.json.gz"
+  filename = "#{batch_id}.json.gz"
   options = {
     "x-amz-acl"    => "public-read",
     "content-type" => "application/gzip",
   }
 
-  client = HTTP::Client.new(YT_URL)
+  yt_client = HTTP::Client.new(YT_URL)
   annotations = {} of String => String
-  errors = [] of String
 
-  ids.each do |id|
+  objects.each do |id|
     id = id.as_s
 
     begin
-      response = client.get("/annotations_invideo?video_id=#{id}&gl=US&hl=en")
+      response = yt_client.get("/annotations_invideo?video_id=#{id}&gl=US&hl=en")
       if response.status_code == 200
         annotations[id] = response.body
-      else
-        errors << id
       end
     rescue ex
-      errors << id
     end
   end
 
@@ -71,11 +78,14 @@ loop do
   io.rewind
   content = io.gets_to_end
 
-  resp = s3.put_object(BUCKET, filename, content, options)
-  puts resp.etag
+  md5_sum = Digest::MD5.hexdigest(content)
+  puts md5_sum
 
-  if !errors.empty?
-    resp = s3.put_object(BUCKET, "error-#{errors[0]}.json", errors.to_json, {"x-amz-acl"    => "public-read",
-                                                                             "content-type" => "application/json"})
-  end
+  # body = {
+  #   "..."
+  # }
+  # client.post("/api/commit", body)
+
+  # resp = s3.put_object(BUCKET, filename, content, options)
+  # puts resp.etag
 end

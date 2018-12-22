@@ -2,7 +2,8 @@ CREATE TABLE public.batches (
     id uuid NOT NULL,
     start_ctid text,
     end_ctid text,
-    finished boolean
+    finished boolean,
+    md5_sum uuid
 );
 
 ALTER TABLE ONLY public.batches
