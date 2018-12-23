@@ -1,3 +1,5 @@
+require "http"
+
 class HTTP::Server
   # Instances of this class are passed to an `HTTP::Server` handler.
   class NewContext < Context
