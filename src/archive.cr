@@ -143,7 +143,7 @@ post "/api/batches" do |env|
   end
 
   batch_id, start_ctid, end_ctid = PG_DB.query_one("SELECT id, start_ctid, end_ctid FROM batches WHERE finished = $1 ORDER BY RANDOM() LIMIT 1", select_finished, as: {String, String, String})
-  objects = PG_DB.query_all("SELECT id FROM videos WHERE ctid >= $1 AND ctid <= $2 ORDER BY id", start_ctid, end_ctid, as: String)
+  objects = PG_DB.query_all("SELECT id FROM videos WHERE ctid >= $1 AND ctid <= $2", start_ctid, end_ctid, as: String)
 
   # Assign worker with batch
   PG_DB.exec("UPDATE workers SET current_batch = $1 WHERE id = $2", batch_id, worker_id)
