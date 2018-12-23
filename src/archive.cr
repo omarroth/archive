@@ -357,5 +357,22 @@ if PG_DB.query_one("SELECT count(*) FROM batches WHERE finished = true", as: Int
   puts "WARNING: No completed batches, will not be able to verify workers"
 end
 
+# Add redirect if SSL is enabled
+if Kemal.config.ssl
+  spawn do
+    server = HTTP::Server.new do |context|
+      redirect_url = "https://#{context.request.host}#{context.request.path}"
+      if context.request.query
+        redirect_url += "?#{context.request.query}"
+      end
+      context.response.headers.add("Location", redirect_url)
+      context.response.status_code = 301
+    end
+
+    server.bind_tcp "0.0.0.0", 80
+    server.listen
+  end
+end
+
 gzip true
 Kemal.run

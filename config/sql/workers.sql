@@ -2,7 +2,8 @@ CREATE TABLE public.workers (
     id uuid NOT NULL,
     ip text,
     reputation integer,
-    disabled boolean
+    disabled boolean,
+    current_batch uuid
 );
 
 ALTER TABLE ONLY public.workers
