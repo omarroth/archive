@@ -11,12 +11,3 @@ class Config
     ),
   })
 end
-
-class WorkerConfig
-  YAML.mapping({
-    access_key: String,
-    secret_key: String,
-    batch_url:  String,
-    batch_size: Int32?,
-  })
-end
