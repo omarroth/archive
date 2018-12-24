@@ -81,17 +81,26 @@ loop do
   yt_client = HTTP::Client.new(YT_URL)
   annotations = {} of String => String
 
+  # TODO: Multi-thread, multiple connections
+  # TODO: Write to tempfile to reduce memory usage
+  # TODO: Write to tempfile for continuation
+  # Main worker loop
   objects.each do |id|
     id = id.as_s
 
-    begin
-      response = yt_client.get("/annotations_invideo?video_id=#{id}&gl=US&hl=en")
-      if response.status_code == 200
-        annotations[id] = response.body
-      else
-        annotations[id] = ""
+    loop do
+      begin
+        response = yt_client.get("/annotations_invideo?video_id=#{id}&gl=US&hl=en")
+        if response.status_code == 200
+          annotations[id] = response.body
+        else
+          annotations[id] = ""
+        end
+
+        print "Got annotations for #{annotations.keys.size}/#{objects.size} videos\r"
+        break
+      rescue ex
       end
-    rescue ex
     end
   end
 
