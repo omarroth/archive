@@ -13,7 +13,7 @@ class HTTP::Server::RequestProcessor
     @wants_close = true
   end
 
-  def process(input, output, remote_addres, error = STDERR)
+  def process(input, output, error = STDERR)
     must_close = true
     response = Response.new(output)
 
@@ -30,10 +30,25 @@ class HTTP::Server::RequestProcessor
           return
         end
 
+        case input # || input.is_a?(OpenSSL::SSL::Socket)
+        when TCPSocket
+          remote_address = input.remote_address
+        when OpenSSL::SSL::Socket
+          io = input.io
+
+          case io
+          when TCPSocket
+            remote_address = io.remote_address
+          end
+        end
+
+        # TODO: Clean up default for remote_address
+        remote_address ||= Socket::IPAddress.new("127.0.0.1", 3000)
+
         response.version = request.version
         response.reset
         response.headers["Connection"] = "keep-alive" if request.keep_alive?
-        context = NewContext.new(request, response, remote_addres)
+        context = NewContext.new(request, response, remote_address)
 
         begin
           @handler.call(context)
