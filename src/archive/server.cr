@@ -3,6 +3,7 @@ require "uri"
 require "./context"
 require "./request_processor"
 {% unless flag?(:without_openssl) %}
+  require "./socket"
   require "openssl"
 {% end %}
 
@@ -391,7 +392,7 @@ class HTTP::Server
       io.sync = false
     end
 
-    @processor.process(io, io, io.as(TCPSocket).remote_address)
+    @processor.process(io, io)
   end
 
   private def handle_exception(e : Exception)
