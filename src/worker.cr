@@ -139,7 +139,7 @@ loop do
       puts error
       break
     end
+  else
+    puts "Uploading to S3 failed, response: #{response.body}"
   end
-
-  # TODO: Add better error handling
 end

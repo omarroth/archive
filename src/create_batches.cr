@@ -17,7 +17,7 @@ PG_DB      = DB.open PG_URL
 BATCH_SIZE = 10000
 
 PG_DB.exec("BEGIN WORK")
-PG_DB.exec("DECLARE C CURSOR FOR SELECT ctid FROM videos")
+PG_DB.exec("DECLARE C CURSOR FOR SELECT id, ctid FROM videos")
 
 count = PG_DB.query_one("SELECT COUNT(*) FROM batches", as: Int64)
 PG_DB.exec("MOVE #{BATCH_SIZE * count} C")
@@ -25,8 +25,8 @@ puts "Skipped #{count} batches"
 
 i = 0
 loop do
-  batch = PG_DB.query_all("FETCH #{BATCH_SIZE} FROM C", as: Slice(UInt8))
-  batch = batch.map do |slice|
+  batch = PG_DB.query_all("FETCH #{BATCH_SIZE} FROM C", as: {String, Slice(UInt8)})
+  start_ctid, end_ctid = {batch[0][1], batch[-1][1]}.map do |slice|
     major = IO::ByteFormat::BigEndian.decode(UInt32, slice)
     slice += 4
     minor = IO::ByteFormat::BigEndian.decode(UInt16, slice)
@@ -34,15 +34,17 @@ loop do
     "(#{major},#{minor})"
   end
 
+  batch = batch.map { |id, ctid| id }
+
   if batch.size < BATCH_SIZE
     break
   end
 
-  if PG_DB.query_one?("SELECT EXISTS (SELECT true FROM batches WHERE start_ctid = $1)", batch[0], as: Bool)
+  if PG_DB.query_one?("SELECT EXISTS (SELECT true FROM batches WHERE start_ctid = $1)", start_ctid, as: Bool)
     next
   end
 
-  PG_DB.exec("INSERT INTO batches VALUES ($1, $2, $3, $4)", UUID.random, batch[0], batch[-1], false)
+  PG_DB.exec("INSERT INTO batches VALUES ($1, $2, $3, $4, $5, $6)", UUID.random, start_ctid, end_ctid, false, nil, batch)
   i += 1
 
   print "Created #{i} new batches\r"

@@ -3,7 +3,8 @@ CREATE TABLE public.batches (
     start_ctid text,
     end_ctid text,
     finished boolean,
-    content_size integer
+    content_size integer,
+    videos text[]
 );
 
 ALTER TABLE ONLY public.batches
