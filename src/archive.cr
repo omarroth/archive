@@ -77,6 +77,7 @@ class Batch
     end_ctid:     String,
     finished:     Bool,
     content_size: Int32?,
+    videos:       Array(String),
   })
 end
 
@@ -142,8 +143,8 @@ post "/api/batches" do |env|
     select_finished = false
   end
 
-  batch_id, start_ctid, end_ctid = PG_DB.query_one("SELECT id, start_ctid, end_ctid FROM batches WHERE finished = $1 ORDER BY RANDOM() LIMIT 1", select_finished, as: {String, String, String})
-  objects = PG_DB.query_all("SELECT id FROM videos WHERE ctid >= $1 AND ctid <= $2", start_ctid, end_ctid, as: String)
+  batch_id, objects = PG_DB.query_one("SELECT id, videos FROM batches WHERE finished = $1 ORDER BY RANDOM() LIMIT 1",
+    select_finished, as: {String, Array(String)})
 
   # Assign worker with batch
   PG_DB.exec("UPDATE workers SET current_batch = $1 WHERE id = $2", batch_id, worker_id)
@@ -187,8 +188,8 @@ post "/api/batches/:batch_id" do |env|
     halt env, status_code: 403, response: response
   end
 
-  start_ctid, end_ctid = PG_DB.query_one("SELECT start_ctid, end_ctid FROM batches WHERE id = $1", batch_id, as: {String, String})
-  objects = PG_DB.query_all("SELECT id FROM videos WHERE ctid >= $1 AND ctid <= $2", start_ctid, end_ctid, as: String)
+  batch_id, objects = PG_DB.query_one("SELECT id, videos FROM batches WHERE id = $1",
+    batch_id, as: {String, Array(String)})
 
   response = {
     "batch_id" => batch_id,
