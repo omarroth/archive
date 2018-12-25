@@ -21,6 +21,8 @@ def make_client(url)
   return client
 end
 
+batch_headers = HTTP::Headers.new
+batch_headers["Content-Type"] = "application/json"
 batch_client = make_client(batch_url)
 
 if File.exists? ".worker_info"
@@ -29,7 +31,7 @@ if File.exists? ".worker_info"
   worker_id = body["worker_id"].as_s
   s3_url = body["s3_url"].as_s
 else
-  response = batch_client.post("/api/workers/create")
+  response = batch_client.post("/api/workers/create", batch_headers)
   body = JSON.parse(response.body)
 
   if response.status_code == 200
@@ -50,9 +52,9 @@ body = JSON::Any.new(nil)
 
 loop do
   begin
-    response = batch_client.post("/api/batches", form: {
+    response = batch_client.post("/api/batches", batch_headers, body: {
       "worker_id" => worker_id,
-    })
+    }.to_json)
   rescue ex
     next
   end
@@ -70,9 +72,9 @@ loop do
       batch_id = body["batch_id"].as_s
       puts "Continuing #{batch_id}..."
 
-      response = batch_client.post("/api/batches/#{batch_id}", form: {
+      response = batch_client.post("/api/batches/#{batch_id}", batch_headers, body: {
         "worker_id" => worker_id,
-      })
+      }.to_json)
       body = JSON.parse(response.body)
 
       if response.status_code == 200
@@ -146,11 +148,12 @@ loop do
 
   loop do
     begin
-      response = batch_client.post("/api/commit", form: {
+      batch_client = make_client(batch_url)
+      response = batch_client.post("/api/commit", batch_headers, body: {
         "worker_id"    => worker_id,
         "batch_id"     => batch_id,
         "content_size" => "#{content_size}",
-      })
+      }.to_json)
 
       break
     rescue ex
@@ -183,10 +186,10 @@ loop do
   end
 
   if response.status_code == 200
-    response = batch_client.post("/api/finalize", form: {
+    response = batch_client.post("/api/finalize", batch_headers, body: {
       "worker_id" => worker_id,
       "batch_id"  => batch_id,
-    })
+    }.to_json)
 
     if response.status_code == 200
       puts "Finished #{batch_id}"
