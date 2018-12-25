@@ -152,7 +152,7 @@ loop do
       response = batch_client.post("/api/commit", batch_headers, body: {
         "worker_id"    => worker_id,
         "batch_id"     => batch_id,
-        "content_size" => "#{content_size}",
+        "content_size" => content_size,
       }.to_json)
 
       break
