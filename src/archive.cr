@@ -81,6 +81,18 @@ class Batch
   })
 end
 
+get "/api/workers" do |env|
+  env.response.content_type = "application/json"
+
+  remote_address = env.as(HTTP::Server::NewContext).remote_address.address
+  workers = PG_DB.query_all("SELECT id FROM workers WHERE ip = $1", remote_address, as: String)
+
+  response = {
+    "workers" => workers,
+  }.to_json
+  halt env, status_code: 200, response: response
+end
+
 post "/api/workers/create" do |env|
   env.response.content_type = "application/json"
 
