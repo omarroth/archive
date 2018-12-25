@@ -23,7 +23,6 @@ end
 
 batch_headers = HTTP::Headers.new
 batch_headers["Content-Type"] = "application/json"
-batch_client = make_client(batch_url)
 
 if File.exists? ".worker_info"
   body = JSON.parse(File.read(".worker_info"))
@@ -31,6 +30,7 @@ if File.exists? ".worker_info"
   worker_id = body["worker_id"].as_s
   s3_url = body["s3_url"].as_s
 else
+  batch_client = make_client(batch_url)
   response = batch_client.post("/api/workers/create", batch_headers)
   body = JSON.parse(response.body)
 
@@ -45,13 +45,12 @@ else
 end
 
 s3_url = URI.parse(s3_url)
-s3_client = make_client(s3_url)
-
 response = HTTP::Client::Response.new(500)
 body = JSON::Any.new(nil)
 
 loop do
   begin
+    batch_client = make_client(batch_url)
     response = batch_client.post("/api/batches", batch_headers, body: {
       "worker_id" => worker_id,
     }.to_json)
@@ -72,6 +71,7 @@ loop do
       batch_id = body["batch_id"].as_s
       puts "Continuing #{batch_id}..."
 
+      batch_client = make_client(batch_url)
       response = batch_client.post("/api/batches/#{batch_id}", batch_headers, body: {
         "worker_id" => worker_id,
       }.to_json)
@@ -179,6 +179,7 @@ loop do
   puts "Uploading to S3..."
   loop do
     begin
+      s3_client = make_client(s3_url)
       response = s3_client.put(upload_url, body: content)
       break
     rescue ex
@@ -186,6 +187,7 @@ loop do
   end
 
   if response.status_code == 200
+    batch_client = make_client(batch_url)
     response = batch_client.post("/api/finalize", batch_headers, body: {
       "worker_id" => worker_id,
       "batch_id"  => batch_id,
