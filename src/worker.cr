@@ -122,7 +122,7 @@ loop do
           end
 
           break
-        rescue ex
+        rescue
         end
       end
     end
