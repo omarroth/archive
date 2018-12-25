@@ -11,6 +11,8 @@ OptionParser.parse! do |parser|
 end
 
 batch_client = HTTP::Client.new(batch_url)
+batch_client.read_timeout = 10.seconds
+batch_client.connect_timeout = 10.seconds
 
 if File.exists? ".worker_info"
   body = JSON.parse(File.read(".worker_info"))
@@ -97,15 +99,19 @@ loop do
           annotations[id] = ""
         end
 
-        print "Got annotations for #{annotations.keys.size}/#{objects.size} videos\r"
+        print "Got annotations for #{annotations.keys.size}/#{objects.size} videos    \r"
         break
       rescue ex
       end
     end
   end
 
+  content = annotations.to_json.to_slice
+  uncompressed_size = content.size
+  puts "All annotations collected (#{(uncompressed_size.to_f / 1024**2).round(1)} MiB)    "
+
   Gzip::Writer.open(io = IO::Memory.new) do |gzip|
-    gzip.write(annotations.to_json.to_slice)
+    gzip.write(content)
   end
 
   io.rewind
@@ -129,10 +135,19 @@ loop do
   end
 
   if upload_url.empty?
+    puts "No need to upload #{batch_id}, all done!"
     next
   end
 
-  response = s3_client.put(upload_url, body: content)
+  puts "All annotations compressed (#{(content_size.to_f / 1024**2).round(1)} MiB)    "
+  puts "Uploading to S3..."
+  loop do
+    begin
+      response = s3_client.put(upload_url, body: content)
+      break
+    rescue ex
+    end
+  end
 
   if response.status_code == 200
     response = batch_client.post("/api/finalize", form: {
