@@ -120,7 +120,7 @@ end
 post "/api/batches" do |env|
   env.response.content_type = "application/json"
 
-  worker_id = env.params.body["worker_id"]
+  worker_id = env.params.json["worker_id"].as(String)
   worker = PG_DB.query_one?("SELECT * FROM workers WHERE id = $1", worker_id, as: Worker)
 
   if !worker
@@ -171,7 +171,7 @@ end
 post "/api/batches/:batch_id" do |env|
   env.response.content_type = "application/json"
 
-  worker_id = env.params.body["worker_id"]
+  worker_id = env.params.json["worker_id"].as(String)
   batch_id = env.params.url["batch_id"]
 
   worker = PG_DB.query_one?("SELECT * FROM workers WHERE id = $1", worker_id, as: Worker)
@@ -213,9 +213,9 @@ end
 post "/api/commit" do |env|
   env.response.content_type = "application/json"
 
-  worker_id = env.params.body["worker_id"]
-  batch_id = env.params.body["batch_id"]
-  content_size = env.params.body["content_size"].try &.to_i?
+  worker_id = env.params.json["worker_id"].as(String)
+  batch_id = env.params.json["batch_id"].as(String)
+  content_size = env.params.json["content_size"].as(Int64)
   content_size ||= 0
 
   worker = PG_DB.query_one?("SELECT * FROM workers WHERE id = $1", worker_id, as: Worker)
@@ -307,8 +307,8 @@ end
 post "/api/finalize" do |env|
   env.response.content_type = "application/json"
 
-  worker_id = env.params.body["worker_id"]
-  batch_id = env.params.body["batch_id"]
+  worker_id = env.params.json["worker_id"].as(String)
+  batch_id = env.params.json["batch_id"].as(String)
 
   worker = PG_DB.query_one?("SELECT * FROM workers WHERE id = $1", worker_id, as: Worker)
 
