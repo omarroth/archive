@@ -231,6 +231,7 @@ class AnnotationProcess {
 		this.id = id;
 		this.callback = callback;
 		this.run();
+		this.errorCount = 0;
 	}
 	run() {
 		let backend = this.parent.worker.config.annotationFetchBackend;
@@ -258,7 +259,12 @@ class AnnotationProcess {
 					console.log("\nDNS error. Will retry in a second...");
 					setTimeout(() => this.run(), 1000);
 				} else {
-					throw err;
+					this.errorCount++;
+					if (this.errorCount >= 25) {
+						throw err;
+					} else {
+						setTimeout(() => this.run(), 1000);
+					}
 				}
 			});
 		} else {
