@@ -81,6 +81,55 @@ class Batch
   })
 end
 
+get "/" do |env|
+  env.response.content_type = "text/html"
+  <<-END_HTML
+  <html>
+  <head>
+  <style>
+    body {
+      margin: 40px auto;
+      max-width: 800px;
+      padding: 0 10px;
+      font-family: Open Sans, Arial;
+      color: #454545;
+      line-height: 1.2;
+    }
+  </style>
+  </head>
+  <body>
+    <h2>See <a href="https://github.com/omarroth/archive">here</a> for details</h2>
+  </body>
+  </html>
+  END_HTML
+end
+
+get "/api/stats" do |env|
+  env.response.content_type = "application/json"
+  batch_count = PG_DB.query_one("SELECT count(*) FROM batches", as: Int64)
+  batch_finished = PG_DB.query_one("SELECT count(*) FROM batches WHERE finished = true", as: Int64)
+  batch_remaining = batch_count - batch_finished
+
+  estimated_video_count = batch_count * 10000
+  estimated_video_finished = batch_finished * 10000
+  estimated_video_remaining = estimated_video_count - estimated_video_finished
+
+  channel_count = PG_DB.query_one("SELECT count(*) FROM channels", as: Int64)
+  worker_count = PG_DB.query_one("SELECT count(*) FROM workers", as: Int64)
+
+  response = {
+    "batch_count"               => batch_count,
+    "batch_finished"            => batch_finished,
+    "batch_remaining"           => batch_remaining,
+    "estimated_video_count"     => estimated_video_count,
+    "estimated_video_finished"  => estimated_video_finished,
+    "estimated_video_remaining" => estimated_video_remaining,
+    "channel_count"             => channel_count,
+    "worker_count"              => worker_count,
+  }.to_pretty_json
+  halt env, status_code: 200, response: response
+end
+
 get "/api/workers" do |env|
   env.response.content_type = "application/json"
 
@@ -364,6 +413,22 @@ post "/api/finalize" do |env|
   PG_DB.exec("UPDATE workers SET reputation = reputation + 1, current_batch = NULL WHERE id = $1", worker_id)
 
   halt env, status_code: 204
+end
+
+error 404 do |env|
+  env.response.content_type = "application/json"
+  {
+    "error"      => "404 Not Found",
+    "error_code" => 404,
+  }.to_pretty_json
+end
+
+error 500 do |env|
+  env.response.content_type = "application/json"
+  {
+    "error"      => "500 Internal Server error",
+    "error_code" => 500,
+  }.to_pretty_json
 end
 
 if PG_DB.query_one("SELECT count(*) FROM batches WHERE finished = true", as: Int64) == 0
