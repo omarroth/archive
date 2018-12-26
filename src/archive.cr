@@ -200,6 +200,8 @@ post "/api/batches" do |env|
   # Check trusted workers less often
   if rand(worker.reputation + 1) == 0 && PG_DB.query_one("SELECT count(*) FROM batches WHERE finished = true", as: Int64) != 0
     select_finished = true
+  elsif PG_DB.query_one("SELECT count(*) FROM batches WHERE finished = false", as: Int64) == 0
+    select_finished = true
   else
     select_finished = false
   end
