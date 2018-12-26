@@ -57,7 +57,7 @@ loop do
         if status_code == 200
           response = XML.parse_html(body)
 
-          joined = response.xpath_node(%q(//span[contains(text(), "Joined")]))
+          joined = response.xpath_node(%q(//span[starts-with(text(), "Joined ")]))
           if joined
             joined = Time.parse(joined.content.lchop("Joined "), "%b %-d, %Y", Time::Location.local)
           end
