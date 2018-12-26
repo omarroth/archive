@@ -1,9 +1,12 @@
 {
-   "master": "https://archive.omar.yt",
    "annotationConcurrentLimit": 200,
-   "sqliteHostParamLimit": 900,
+   "annotationFetchBackend": "request",
    "db": "./cache.db",
+   "eraseDB": true,
+   "master": "https://archive.omar.yt",
+   "progressFrequency": 10,
+   "sqliteHostParamLimit": 900,
+   "s3_url": "https://yt-annotation-archive.sfo2.digitaloceanspaces.com",
    "workers": [
-   ],
-   "s3_url": "https://yt-annotation-archive.sfo2.digitaloceanspaces.com"
+   ]
 }
