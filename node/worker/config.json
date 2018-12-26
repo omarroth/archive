@@ -1,5 +1,5 @@
 {
-   "annotationConcurrentLimit": 200,
+   "annotationConcurrentLimit": 100,
    "annotationFetchBackend": "request",
    "db": "./cache.db",
    "eraseDB": true,

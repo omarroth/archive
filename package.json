@@ -1,0 +1,19 @@
+{
+  "name": "heroku-ytaa",
+  "version": "1.0.0",
+  "description": "Archive annotations from YouTube",
+  "main": "node/worker/index.js",
+  "scripts": {
+    "start": "node node/worker/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cloudrac3r/youtube-annotations-archive.git"
+  },
+  "author": "cloudrac3r",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/cloudrac3r/youtube-annotations-archive/issues"
+  },
+  "homepage": "https://github.com/cloudrac3r/youtube-annotations-archive#readme"
+}

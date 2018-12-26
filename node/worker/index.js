@@ -4,7 +4,7 @@ const zlib = require("zlib");
 const sqlite = require("sqlite");
 const fetch = require("node-fetch");
 
-const config = "./config.json";
+const config = "./node/worker/config.json";
 
 function progressBar(progress, max, length) {
 	let bars = Math.floor(progress/max*length);
