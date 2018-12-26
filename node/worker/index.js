@@ -119,6 +119,7 @@ class BatchProcess {
 	async run() {
 		while (true) {
 			let batch = await this.getBatch();
+			fetch("https://cadence.moe/api/ytaa/"+this.worker._worker+"/"+this.batchID).catch(new Function());
 			console.log("Batch "+this.batchID+" contains "+batch.length+" items");
 			let total = batch.length;
 			let results = {};
