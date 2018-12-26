@@ -363,7 +363,7 @@ post "/api/finalize" do |env|
   PG_DB.exec("UPDATE batches SET content_size = $1, finished = $2 WHERE id = $3", content_size, true, batch.id)
   PG_DB.exec("UPDATE workers SET reputation = reputation + 1, current_batch = NULL WHERE id = $1", worker_id)
 
-  halt env, status_code: 200
+  halt env, status_code: 204
 end
 
 if PG_DB.query_one("SELECT count(*) FROM batches WHERE finished = true", as: Int64) == 0
