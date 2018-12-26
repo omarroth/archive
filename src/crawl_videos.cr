@@ -31,8 +31,10 @@ active_threads = 0
 active_channel = Channel(Bool).new
 i = 0
 
+PG_DB.exec("BEGIN WORK")
+PG_DB.exec("DECLARE C CURSOR FOR SELECT id FROM videos")
 loop do
-  PG_DB.query("SELECT id FROM videos") do |rs|
+  PG_DB.query("FETCH 20000 C") do |rs|
     rs.each do
       id = rs.read(String)
 
@@ -123,3 +125,5 @@ loop do
     end
   end
 end
+
+PG_DB.exec("COMMIT")
