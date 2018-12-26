@@ -8,7 +8,7 @@ const config = "./config.json";
 
 function progressBar(progress, max, length) {
 	let bars = Math.floor(progress/max*length);
-	return progress.toString().padStart(" ", max.toString().length)+"/"+max+" ["+"=".repeat(bars)+" ".repeat(length-bars)+"]";
+	return progress.toString().padStart(max.toString().length, " ")+"/"+max+" ["+"=".repeat(bars)+" ".repeat(length-bars)+"]";
 }
 
 class SendableObject {
@@ -71,7 +71,10 @@ class Worker {
 			so.addHeaders({"Content-Type": "application/json"});
 		}
 		return fetch(so.object.url, so.object)
-		.then(res => res.json())
+		.then(res => {
+			if (res.status == 204) return Promise.resolve("");
+			else return res.json();
+		});
 	}
 	async workerRequest(url, object) {
 		let workerID = await this.getWorker();
@@ -84,14 +87,14 @@ class Worker {
 	async getWorker(refetch) {
 		if (this._worker && !refetch) return this._worker;
 		else {
-			process.stdout.write("Requesting a new worker ID... ");
+			console.log("Requesting a new worker ID");
 			return this._worker = new Promise(async resolve => {
 				let data = await this.request("/api/workers/create", {method: "POST", body: ""});
 				this.config.s3_url = data.s3_url;
 				this._worker = data.worker_id;
 				this.config.workers.push(this._worker);
 				this.writeConfig();
-				process.stdout.write("done: "+this._worker+"\n");
+				console.log("New worker created: "+this._worker+"\n");
 				resolve(this._worker);
 			});
 		}
@@ -133,19 +136,50 @@ class BatchProcess {
 				process.stdout.write("\r"+progressBar(Object.keys(results).length, total, 40));
 			}
 			drawProgress();
+			let remainingProcesses = 0;
 			await new Promise(resolve => {
 				const callback = (id, response) => {
 					results[id] = response;
 					drawProgress();
 					if (batch.length) new AnnotationProcess(this, batch.pop(), callback);
-					else resolve();
+					else if (--remainingProcesses == 0) resolve();
 				}
 				for (let i = 0; i < this.worker.config.annotationConcurrentLimit; i++) {
-					new AnnotationProcess(this, batch.pop(), callback);
+					if (batch.length) {
+						remainingProcesses++;
+						new AnnotationProcess(this, batch.pop(), callback);
+					}
 				}
+				if (remainingProcesses == 0) resolve();
 			});
 			process.stdout.write("\n");
 			console.log("All annotations fetched");
+			let toCompress = JSON.stringify(results);
+			process.stdout.write("Compressing "+(toCompress.length/1e6).toFixed(1)+"MB of data... ");
+			let gzipData = await new Promise(resolve => zlib.gzip(toCompress, (err, buf) => {
+				if (err) throw err;
+				resolve(buf);
+			}));
+			process.stdout.write("done, new size is "+(gzipData.length/1e6).toFixed(1)+"\n");
+			let commitResponse = await this.worker.workerRequest("/api/commit", {body: {batch_id: this.batchID, content_size: gzipData.length}});
+			if (commitResponse.error_code) throw commitResponse;
+			if (commitResponse.upload_url) {
+				process.stdout.write("Successfully committed batch, uploading now... ");
+				await rp({
+					url: commitResponse.upload_url,
+					method: "PUT",
+					body: gzipData,
+					headers: {
+						"Content-Type": "application/gzip"
+					}
+				});
+				process.stdout.write("done.\n");
+				process.stdout.write("Finalising... ");
+				await this.worker.workerRequest("/api/finalize", {body: {batch_id: this.batchID}});
+				process.stdout.write("done.\n");
+			} else {
+				process.stdout.write("Successfully committed batch, and no upload required.\n");
+			}
 			void 0;
 		}
 	}
@@ -154,13 +188,16 @@ class BatchProcess {
 		return this.worker.workerRequest("/api/batches", {simple: false}).then(response => {
 			if (response.objects) {
 				process.stdout.write("done, starting new batch ("+response.objects.length+" items)\n");
+				this.batchID = response.batch_id;
 				return response.objects;
 			} else if (response.error_code == 4) {
-				let wipBatch = response.batch_id;
-				return this.worker.workerRequest("/api/batches/"+wipBatch).then(response => {
-					process.stdout.write("done, resuming batch "+wipBatch+" ("+response.objects.length+" items)\n");
+				this.batchID = response.batch_id;
+				return this.worker.workerRequest("/api/batches/"+this.batchID).then(response => {
+					process.stdout.write("done, resuming batch "+this.batchID+" ("+response.objects.length+" items)\n");
 					return response.objects;
 				});
+			} else if (response.error_code) {
+				throw response;
 			}
 		});
 	}
@@ -187,8 +224,8 @@ class AnnotationProcess {
 	done(response) {
 		process.nextTick(() => this.callback(this.id, response));
 		this.parent.worker.db.run("INSERT INTO Cache VALUES (?, ?)", [this.id, response]).catch(err => {
-			err;
-			void 0;
+			console.log(err);
+			throw err;
 		});
 	}
 }
