@@ -15,5 +15,15 @@
   "bugs": {
     "url": "https://github.com/cloudrac3r/youtube-annotations-archive/issues"
   },
-  "homepage": "https://github.com/cloudrac3r/youtube-annotations-archive#readme"
+  "homepage": "https://github.com/cloudrac3r/youtube-annotations-archive#readme",
+  "dependencies": {
+    "aws4": "^1.8.0",
+    "fast-xml-parser": "^3.12.10",
+    "mime": "^2.4.0",
+    "node-fetch": "^2.3.0",
+    "request": "^2.88.0",
+    "request-promise-native": "^1.0.5",
+    "sqlite": "^3.0.0",
+    "sqlite3": "^4.0.4"
+  }
 }
