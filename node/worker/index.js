@@ -7,10 +7,12 @@ const http = require("http");
 
 const config = "./node/worker/config.json";
 
+let port = process.env.PORT || 3000;
+console.log("Will listen on "+port);
 http.createServer((req, res) => {
-	res.writeHead(200, {"Content-Type": "text/html"});
+	res.writeHead(200, {"Content-Type": "text/plain"});
 	res.end("It works!");
-}).listen(3000);
+}).listen(port);
 
 function progressBar(progress, max, length) {
 	let bars = Math.floor(progress/max*length);
