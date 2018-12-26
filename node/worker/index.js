@@ -3,8 +3,14 @@ const fs = require("fs");
 const zlib = require("zlib");
 const sqlite = require("sqlite");
 const fetch = require("node-fetch");
+const http = require("http");
 
 const config = "./node/worker/config.json";
+
+http.createServer((req, res) => {
+	res.writeHead(200, {"Content-Type": "text/html"});
+	res.end("It works!");
+}).listen(3000);
 
 function progressBar(progress, max, length) {
 	let bars = Math.floor(progress/max*length);
