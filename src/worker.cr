@@ -11,6 +11,7 @@ max_threads = 10
 OptionParser.parse! do |parser|
   parser.on("-u URL", "--batch-url=URL", "Master server URL") { |url| batch_url = URI.parse(url) }
   parser.on("-t THREADS", "--max-threads=THREADS", "Number of threads for downloading annotations") { |threads| max_threads = threads.to_i }
+  parser.on("-h", "--help", "Show this help") { puts parser }
 end
 
 def make_client(url)
