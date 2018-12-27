@@ -107,7 +107,7 @@ end
 get "/api/stats" do |env|
   env.response.content_type = "application/json"
   batch_count = PG_DB.query_one("SELECT count(*) FROM batches", as: Int64)
-  batch_finished = PG_DB.query_one("SELECT count(*) FROM batches WHERE finished = true", as: Int64)
+  batch_finished, content_size = PG_DB.query_one("SELECT count(*), sum(content_size) FROM batches WHERE finished = true", as: {Int64, Int64})
   batch_remaining = batch_count - batch_finished
 
   estimated_video_count = batch_count * 10000
@@ -121,6 +121,7 @@ get "/api/stats" do |env|
     "batch_count"               => batch_count,
     "batch_finished"            => batch_finished,
     "batch_remaining"           => batch_remaining,
+    "content_size"              => content_size,
     "estimated_video_count"     => estimated_video_count,
     "estimated_video_finished"  => estimated_video_finished,
     "estimated_video_remaining" => estimated_video_remaining,
