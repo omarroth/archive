@@ -16,8 +16,17 @@ The current process is to scrape as many channel IDs as possible, then to scrape
 
 #### With Docker:
 
+Download the `Dockerfile` located in the `/docker` folder, navigate to the folder you downloaded the file into and run the following command to build the image:
+
 ```bash
-$ docker build docker
+$ docker build -t archive .
+```
+
+Use the following commands to create a container with the image and run it to begin the archiving process:
+
+```bash
+$ docker create --name=archive-worker archive:latest
+$ docker container start archive-worker
 ```
 
 #### On Ubuntu:
