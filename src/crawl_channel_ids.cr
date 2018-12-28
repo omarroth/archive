@@ -29,15 +29,19 @@ end
 
 active_threads = 0
 active_channel = Channel(Bool).new
+i = 0
 
+PG_DB.exec("BEGIN")
+PG_DB.exec("DECLARE crawl_channel_ids CURSOR FOR SELECT ucid FROM channels WHERE finished = false OR joined IS NULL")
 loop do
-  PG_DB.query("SELECT ucid FROM channels WHERE finished = false OR joined IS NULL") do |rs|
+  PG_DB.query("FETCH 1000000 crawl_channel_ids") do |rs|
     rs.each do
       ucid = rs.read(String)
 
       if active_threads >= max_threads
         if active_channel.receive
           active_threads -= 1
+          i += 1
         end
       end
 
@@ -79,9 +83,7 @@ loop do
         active_channel.send(true)
       end
 
-      remaining = PG_DB.query_one("SELECT count(*) FROM channels WHERE finished = false", as: Int64)
-      finished = PG_DB.query_one("SELECT count(*) FROM channels WHERE finished = true", as: Int64)
-      print "Remaining: #{remaining}, processed: #{finished}\r"
+      print "Processed: #{i}\r"
     end
   end
 end

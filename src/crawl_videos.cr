@@ -32,9 +32,9 @@ active_channel = Channel(Bool).new
 i = 0
 
 PG_DB.exec("BEGIN")
-PG_DB.exec("DECLARE C CURSOR FOR SELECT id FROM videos")
+PG_DB.exec("DECLARE crawl_videos CURSOR FOR SELECT id FROM videos")
 loop do
-  PG_DB.query("FETCH 1000000 C") do |rs|
+  PG_DB.query("FETCH 1000000 crawl_videos") do |rs|
     rs.each do
       id = rs.read(String)
 
