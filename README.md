@@ -12,9 +12,33 @@ The current process is to scrape as many channel IDs as possible, then to scrape
 
 ## Usage
 
-### Installing and running a worker (Crystal):
+### Installing and running a worker (Node.js):
+
+#### On Ubuntu:
 
 ```bash
+# Install dependencies
+$ sudo apt-get install curl python-software-properties
+$ curl -sL https://deb.nodesource.com/setup_10.x | sudo -E bash -
+$ sudo apt-get install nodejs gcc g++ make
+
+$ git clone https://github.com/omarroth/archive
+$ cd archive/node
+$ npm install
+$ cd worker
+$ node index.js
+```
+
+### Installing and running a worker (Crystal):
+
+#### On Ubuntu:
+
+```bash
+# Install dependencies
+$ curl -sSL https://dist.crystal-lang.org/apt/setup.sh | sudo bash
+$ sudo apt-get update
+$ sudo apt-get install crystal libssl-dev libxml2-dev libyaml-dev libgmp-dev libreadline-dev librsvg2-dev
+
 $ git clone https://github.com/omarroth/archive
 $ cd archive
 $ shards
@@ -28,16 +52,6 @@ $ ./worker -h
     -t THREADS, --max-threads=THREADS
                                      Number of threads for downloading annotations
     -h, --help                       Show this help
-```
-
-### Installing and running a worker (Node.js):
-
-```bash
-$ git clone https://github.com/omarroth/archive
-$ cd archive/node
-$ npm install
-$ cd worker
-$ node index.js
 ```
 
 ## Contributors
