@@ -35,7 +35,7 @@ else
   response = batch_client.post("/api/workers/create", batch_headers)
   body = JSON.parse(response.body)
 
-  if response.status_code < 300
+  if response.status_code == 200
     worker_id = body["worker_id"].as_s
     s3_url = body["s3_url"].as_s
 
@@ -61,7 +61,7 @@ loop do
 
   body = JSON.parse(response.body)
 
-  if response.status_code < 300
+  if response.status_code == 200
     batch_id = body["batch_id"].as_s
     objects = body["objects"].as_a
   else
@@ -78,7 +78,7 @@ loop do
       }.to_json)
       body = JSON.parse(response.body)
 
-      if response.status_code < 300
+      if response.status_code == 200
         batch_id = body["batch_id"].as_s
         objects = body["objects"].as_a
       else
@@ -118,7 +118,7 @@ loop do
           yt_client = make_client(YT_URL)
           response = yt_client.get("/annotations_invideo?video_id=#{id}&gl=US&hl=en")
 
-          if response.status_code < 300
+          if response.status_code == 200
             active_channel.send({video_id, response.body})
           else
             active_channel.send({video_id, ""})
@@ -163,7 +163,7 @@ loop do
 
   body = JSON.parse(response.body)
 
-  if response.status_code < 300
+  if response.status_code == 200
     upload_url = body["upload_url"].as_s
   else
     error = body["error"].as_s
@@ -187,14 +187,14 @@ loop do
     end
   end
 
-  if response.status_code < 300
+  if response.status_code == 200
     batch_client = make_client(batch_url)
     response = batch_client.post("/api/finalize", batch_headers, body: {
       "worker_id" => worker_id,
       "batch_id"  => batch_id,
     }.to_json)
 
-    if response.status_code < 300
+    if response.status_code == 204
       puts "Finished #{batch_id}"
     else
       body = JSON.parse(response.body)
