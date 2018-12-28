@@ -16,7 +16,13 @@ The current process is to scrape as many channel IDs as possible, then to scrape
 
 #### With Docker:
 
-Download the `Dockerfile` located in the `/docker` folder, navigate to the folder you downloaded the file into and run the following command to build the image:
+Download the `Dockerfile` located in the `/docker` folder with
+
+```bash
+$ wget https://github.com/omarroth/archive/raw/master/docker/Dockerfile
+```
+
+Then in the same directory run the following command to build the image:
 
 ```bash
 $ docker build -t archive .
