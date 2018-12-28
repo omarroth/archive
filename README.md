@@ -14,6 +14,12 @@ The current process is to scrape as many channel IDs as possible, then to scrape
 
 ### Installing and running a worker (Node.js):
 
+#### With Docker:
+
+```bash
+$ docker build docker
+```
+
 #### On Ubuntu:
 
 ```bash
