@@ -221,6 +221,7 @@ class AnnotationProcess {
 		this.parent = parent;
 		this.id = id;
 		this.callback = callback;
+		this.errorCount = 0;
 		this.run();
 	}
 	run() {
@@ -235,8 +236,15 @@ class AnnotationProcess {
 				});
 			}).catch(err => {
 				if (err.constructor.name == "FetchError" && (err.message.includes("EAI_AGAIN") || err.message.includes("getaddrinfo ENOTFOUND"))) {
-					console.log("\nDNS error. Will retry in a second...");
+					this.errorLog("DNS error. Will retry in a second...");
 					setTimeout(() => this.run(), 1000);
+				} else {
+					if (this.parent.worker.config.forceRetryAllErrors && ++this.errorCount < 10) {
+						this.errorLog("Error, will retry in a moment.\nIf you get lots of these errors, try turning down annotationConcurrentLimit in config.json.");
+						setTimeout(() => this.run(), 8000);
+					} else {
+						throw err;
+					}
 				}
 			});
 		} else if (backend == "request") {
@@ -246,10 +254,15 @@ class AnnotationProcess {
 				if (err.constructor.name == "StatusCodeError") {
 					this.done("");
 				} else if (err.constructor.name == "RequestError" && (err.message.includes("EAI_AGAIN") || err.message.includes("getaddrinfo ENOTFOUND"))) {
-					console.log("\nDNS error. Will retry in a second...");
+					this.errorLog("\nDNS error. Will retry in a second...");
 					setTimeout(() => this.run(), 1000);
 				} else {
-					throw err;
+					if (this.parent.worker.config.forceRetryAllErrors && ++this.errorCount < 10) {
+						this.errorLog("Error, will retry in a moment.\nIf you get lots of these errors, try turning down annotationConcurrentLimit in config.json.");
+						setTimeout(() => this.run(), 8000);
+					} else {
+						throw err;
+					}
 				}
 			});
 		} else {
@@ -262,6 +275,9 @@ class AnnotationProcess {
 			console.log(err);
 			throw err;
 		});
+	}
+	errorLog(message) {
+		if (!this.parent.worker.config.silenceErrors) console.log("\n"+message);
 	}
 }
 
