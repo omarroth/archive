@@ -3,8 +3,10 @@
    "annotationFetchBackend": "request",
    "db": "./cache.db",
    "eraseDB": true,
+   "forceRetryAllErrors": true,
    "master": "https://archive.omar.yt",
    "progressFrequency": 10,
+   "silenceErrors": false,
    "sqliteHostParamLimit": 900,
    "s3_url": "https://yt-annotation-archive.sfo2.digitaloceanspaces.com",
    "workers": [
