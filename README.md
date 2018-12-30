@@ -50,6 +50,14 @@ $ cd worker
 $ node index.js
 ```
 
+#### With Heroku
+
+Create a new Heroku app and point it to https://github.com/omarroth/archive on the branch "heroku", and trigger a manual deploy.
+
+Enable automatic deploys to receive the latest updates automatically.
+
+The webserver is just a placeholder — open the logs to see what's currently going on.
+
 ### Installing and running a worker (Crystal):
 
 #### On Ubuntu:
