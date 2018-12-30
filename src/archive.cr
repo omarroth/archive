@@ -62,11 +62,12 @@ PG_DB = DB.open PG_URL
 
 class Worker
   DB.mapping({
-    id:            String,
-    ip:            String,
-    reputation:    Int32,
-    disabled:      Bool,
-    current_batch: String?,
+    id:             String,
+    ip:             String,
+    reputation:     Int32,
+    disabled:       Bool,
+    current_batch:  String?,
+    last_committed: Time?,
   })
 end
 
@@ -115,6 +116,7 @@ get "/api/stats" do |env|
   estimated_video_remaining = estimated_video_count - estimated_video_finished
 
   worker_count = PG_DB.query_one("SELECT count(*) FROM workers", as: Int64)
+  worker_active = PG_DB.query_one("SELECT count(*) FROM workers WHERE (CURRENT_TIMESTAMP - last_committed) < interval '1 hour'", as: Int64)
 
   response = {
     "batch_count"               => batch_count,
@@ -125,6 +127,7 @@ get "/api/stats" do |env|
     "estimated_video_finished"  => estimated_video_finished,
     "estimated_video_remaining" => estimated_video_remaining,
     "worker_count"              => worker_count,
+    "worker_active"             => worker_active,
   }.to_pretty_json
   halt env, status_code: 200, response: response
 end
@@ -315,14 +318,14 @@ post "/api/commit" do |env|
 
   if batch.finished && batch.content_size
     if ((content_size - batch.content_size.not_nil!).to_f / batch.content_size.not_nil!.to_f).abs < CONTENT_THRESHOLD
-      PG_DB.exec("UPDATE workers SET reputation = reputation + 1, current_batch = NULL WHERE id = $1", worker_id)
+      PG_DB.exec("UPDATE workers SET reputation = reputation + 1, current_batch = NULL, last_committed = $1 WHERE id = $2", Time.now, worker_id)
 
       response = {
         "upload_url" => "",
       }.to_json
       halt env, status_code: 200, response: response
     else
-      PG_DB.exec("UPDATE workers SET reputation = reputation - 5 WHERE id = $1", worker.id)
+      PG_DB.exec("UPDATE workers SET reputation = reputation - 10 WHERE id = $1", worker.id)
       PG_DB.exec("UPDATE workers SET disabled = true WHERE reputation < 0 AND id = $1", worker.id)
 
       response = {
@@ -411,7 +414,7 @@ post "/api/finalize" do |env|
   content_size = response.headers["Content-Length"].to_i
 
   PG_DB.exec("UPDATE batches SET content_size = $1, finished = $2 WHERE id = $3", content_size, true, batch.id)
-  PG_DB.exec("UPDATE workers SET reputation = reputation + 1, current_batch = NULL WHERE id = $1", worker_id)
+  PG_DB.exec("UPDATE workers SET reputation = reputation + 1, current_batch = NULL, last_committed = $1 WHERE id = $2", Time.now, worker_id)
 
   halt env, status_code: 204, response: ""
 end
