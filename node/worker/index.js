@@ -11,6 +11,47 @@ function progressBar(progress, max, length) {
 	return progress.toString().padStart(max.toString().length, " ")+"/"+max+" ["+"=".repeat(bars)+" ".repeat(length-bars)+"]";
 }
 
+class LockManager {
+	constructor(debug) {
+		this.debug = debug;
+		this.locked = false;
+		this.queue = [];
+	}
+	log(message) {
+		if (this.debug) console.log(message);
+	}
+	waitForUnlock(callback) {
+		this.log("WAIT FOR UNLOCK CALLED");
+		if (!this.locked) {
+			this.log("PROCEEDING");
+			this.lock();
+			callback();
+		} else {
+			this.log("WAITING");
+			this.queue.push(() => {
+				this.log("WAIT OVER, RETRYING");
+				this.waitForUnlock(callback);
+			});
+		}
+	}
+	lock() {
+		this.log("LOCKED");
+		this.locked = true;
+	}
+	unlock() {
+		this.log("UNLOCKED");
+		this.locked = false;
+		if (this.queue.length) {
+			this.log("STARTING QUEUE");
+			setImmediate(() => this.queue.shift()());
+		}
+	}
+	promise() {
+		return new Promise(resolve => this.waitForUnlock(resolve));
+	}
+}
+const dbLockManager = new LockManager();
+
 class SendableObject {
 	constructor(url, object) {
 		this._cso = true;
@@ -136,6 +177,7 @@ class BatchProcess {
 			}
 			console.log("Downloading annotation data...");
 			let completed = Object.keys(results).length;
+			let cacheBuffer = [];
 			const drawProgress = override => {
 				if (override || completed % this.worker.config.progressFrequency == 0) {
 					process.stdout.write("\r"+progressBar(completed, total, 50));
@@ -146,6 +188,18 @@ class BatchProcess {
 			await new Promise(resolve => {
 				const callback = (id, response) => {
 					results[id] = response;
+					cacheBuffer.push(id);
+					if (cacheBuffer.length >= this.worker.config.cacheFrequency) {
+						(async () => {
+							if (dbLockManager.locked) return;
+							await dbLockManager.promise();
+							await this.worker.db.run("BEGIN TRANSACTION");
+							await Promise.all(cacheBuffer.map(id => this.worker.db.run("INSERT INTO Cache VALUES (?, ?)", [id, results[id]])));
+							await this.worker.db.run("END TRANSACTION");
+							cacheBuffer = [];
+							dbLockManager.unlock();
+						})();
+					}
 					completed++;
 					drawProgress();
 					if (batch.length) new AnnotationProcess(this, batch.pop(), callback);
@@ -189,9 +243,11 @@ class BatchProcess {
 				process.stdout.write("done, no upload required.\n");
 			}
 			if (this.worker.config.eraseDB) {
+				await dbLockManager.promise();
 				process.stdout.write("Wiping cache database... ");
 				await this.worker.db.run("DELETE FROM Cache");
 				process.stdout.write("done.\n");
+				dbLockManager.unlock();
 			}
 			void 0;
 		}
@@ -210,7 +266,16 @@ class BatchProcess {
 					return response.objects;
 				});
 			} else if (response.error_code) {
-				throw response;
+				/* 1 : Too many workers for IP
+				 * 2 : Worker does not exist
+				 * 3 : Worker is disabled
+				 * 4 : Worker must commit #{batch_id}
+				 * 5 : Worker isn't allowed access to #{batch_id}
+				 * 6 : Cannot commit with empty batch_id
+				 * 7 : Batch #{batch_id} does not exist
+				 * 8 : Invalid size for #{batch_id}
+				 */
+				throw new Error("Batch request returned API error "+response.error_code);
 			}
 		});
 	}
@@ -271,10 +336,6 @@ class AnnotationProcess {
 	}
 	done(response) {
 		process.nextTick(() => this.callback(this.id, response));
-		this.parent.worker.db.run("INSERT INTO Cache VALUES (?, ?)", [this.id, response]).catch(err => {
-			console.log(err);
-			throw err;
-		});
 	}
 	errorLog(message) {
 		if (!this.parent.worker.config.silenceErrors) console.log("\n"+message);

@@ -1,6 +1,7 @@
 {
    "annotationConcurrentLimit": 200,
    "annotationFetchBackend": "request",
+   "cacheFrequency": 250,
    "db": "./cache.db",
    "eraseDB": true,
    "forceRetryAllErrors": true,
