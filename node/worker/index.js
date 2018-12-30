@@ -19,6 +19,47 @@ function progressBar(progress, max, length) {
 	return progress.toString().padStart(max.toString().length, " ")+"/"+max+" ["+"=".repeat(bars)+" ".repeat(length-bars)+"]";
 }
 
+class LockManager {
+	constructor(debug) {
+		this.debug = debug;
+		this.locked = false;
+		this.queue = [];
+	}
+	log(message) {
+		if (this.debug) console.log(message);
+	}
+	waitForUnlock(callback) {
+		this.log("WAIT FOR UNLOCK CALLED");
+		if (!this.locked) {
+			this.log("PROCEEDING");
+			this.lock();
+			callback();
+		} else {
+			this.log("WAITING");
+			this.queue.push(() => {
+				this.log("WAIT OVER, RETRYING");
+				this.waitForUnlock(callback);
+			});
+		}
+	}
+	lock() {
+		this.log("LOCKED");
+		this.locked = true;
+	}
+	unlock() {
+		this.log("UNLOCKED");
+		this.locked = false;
+		if (this.queue.length) {
+			this.log("STARTING QUEUE");
+			setImmediate(() => this.queue.shift()());
+		}
+	}
+	promise() {
+		return new Promise(resolve => this.waitForUnlock(resolve));
+	}
+}
+const dbLockManager = new LockManager();
+
 class SendableObject {
 	constructor(url, object) {
 		this._cso = true;
@@ -145,9 +186,10 @@ class BatchProcess {
 			}
 			console.log("Downloading annotation data...");
 			let completed = Object.keys(results).length;
+			let cacheBuffer = [];
 			const drawProgress = override => {
 				if (override || completed % this.worker.config.progressFrequency == 0) {
-					process.stdout.write("\r"+progressBar(completed, total, 50));
+					console.log(progressBar(completed, total, 50));
 				}
 			}
 			drawProgress(true);
@@ -155,6 +197,18 @@ class BatchProcess {
 			await new Promise(resolve => {
 				const callback = (id, response) => {
 					results[id] = response;
+					cacheBuffer.push(id);
+					if (cacheBuffer.length >= this.worker.config.cacheFrequency) {
+						(async () => {
+							if (dbLockManager.locked) return;
+							await dbLockManager.promise();
+							await this.worker.db.run("BEGIN TRANSACTION");
+							await Promise.all(cacheBuffer.map(id => this.worker.db.run("INSERT INTO Cache VALUES (?, ?)", [id, results[id]])));
+							await this.worker.db.run("END TRANSACTION");
+							cacheBuffer = [];
+							dbLockManager.unlock();
+						})();
+					}
 					completed++;
 					drawProgress();
 					if (batch.length) new AnnotationProcess(this, batch.pop(), callback);
@@ -198,9 +252,11 @@ class BatchProcess {
 				process.stdout.write("done, no upload required.\n");
 			}
 			if (this.worker.config.eraseDB) {
+				await dbLockManager.promise();
 				process.stdout.write("Wiping cache database... ");
 				await this.worker.db.run("DELETE FROM Cache");
 				process.stdout.write("done.\n");
+				dbLockManager.unlock();
 			}
 			void 0;
 		}
@@ -219,7 +275,16 @@ class BatchProcess {
 					return response.objects;
 				});
 			} else if (response.error_code) {
-				throw response;
+				/* 1 : Too many workers for IP
+				 * 2 : Worker does not exist
+				 * 3 : Worker is disabled
+				 * 4 : Worker must commit #{batch_id}
+				 * 5 : Worker isn't allowed access to #{batch_id}
+				 * 6 : Cannot commit with empty batch_id
+				 * 7 : Batch #{batch_id} does not exist
+				 * 8 : Invalid size for #{batch_id}
+				 */
+				throw new Error("Batch request returned API error "+response.error_code);
 			}
 		});
 	}
@@ -230,6 +295,7 @@ class AnnotationProcess {
 		this.parent = parent;
 		this.id = id;
 		this.callback = callback;
+		this.errorCount = 0;
 		this.run();
 		this.errorCount = 0;
 	}
@@ -245,8 +311,15 @@ class AnnotationProcess {
 				});
 			}).catch(err => {
 				if (err.constructor.name == "FetchError" && (err.message.includes("EAI_AGAIN") || err.message.includes("getaddrinfo ENOTFOUND"))) {
-					console.log("\nDNS error. Will retry in a second...");
+					this.errorLog("DNS error. Will retry in a second...");
 					setTimeout(() => this.run(), 1000);
+				} else {
+					if (this.parent.worker.config.forceRetryAllErrors && ++this.errorCount < 10) {
+						this.errorLog("Error, will retry in a moment.\nIf you get lots of these errors, try turning down annotationConcurrentLimit in config.json.");
+						setTimeout(() => this.run(), 8000);
+					} else {
+						throw err;
+					}
 				}
 			});
 		} else if (backend == "request") {
@@ -256,14 +329,14 @@ class AnnotationProcess {
 				if (err.constructor.name == "StatusCodeError") {
 					this.done("");
 				} else if (err.constructor.name == "RequestError" && (err.message.includes("EAI_AGAIN") || err.message.includes("getaddrinfo ENOTFOUND"))) {
-					console.log("\nDNS error. Will retry in a second...");
+					this.errorLog("\nDNS error. Will retry in a second...");
 					setTimeout(() => this.run(), 1000);
 				} else {
-					this.errorCount++;
-					if (this.errorCount >= 25) {
-						throw err;
+					if (this.parent.worker.config.forceRetryAllErrors && ++this.errorCount < 10) {
+						this.errorLog("Error, will retry in a moment.\nIf you get lots of these errors, try turning down annotationConcurrentLimit in config.json.");
+						setTimeout(() => this.run(), 8000);
 					} else {
-						setTimeout(() => this.run(), 1000);
+						throw err;
 					}
 				}
 			});
@@ -273,10 +346,9 @@ class AnnotationProcess {
 	}
 	done(response) {
 		process.nextTick(() => this.callback(this.id, response));
-		this.parent.worker.db.run("INSERT INTO Cache VALUES (?, ?)", [this.id, response]).catch(err => {
-			console.log(err);
-			throw err;
-		});
+	}
+	errorLog(message) {
+		if (!this.parent.worker.config.silenceErrors) console.log("\n"+message);
 	}
 }
 
