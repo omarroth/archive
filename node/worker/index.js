@@ -247,7 +247,7 @@ class BatchProcess {
 				process.stdout.write("Wiping cache database... ");
 				await this.worker.db.run("DELETE FROM Cache");
 				process.stdout.write("done.\n");
-				dbLockManger.unlock();
+				dbLockManager.unlock();
 			}
 			void 0;
 		}
