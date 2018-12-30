@@ -3,7 +3,8 @@ CREATE TABLE public.workers (
     ip text,
     reputation integer,
     disabled boolean,
-    current_batch uuid
+    current_batch uuid,
+    last_committed timestamp with time zone
 );
 
 ALTER TABLE ONLY public.workers
