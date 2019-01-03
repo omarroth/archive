@@ -419,6 +419,52 @@ post "/api/finalize" do |env|
   halt env, status_code: 204, response: ""
 end
 
+post "/api/videos/submit" do |env|
+  env.response.content_type = "application/json"
+
+  videos = env.params.json["videos"].as(Array(JSON::Any))
+  videos = videos.map { |videos| videos.as_s }
+  videos.select! { |video| video.size == 11 }
+
+  exists = PG_DB.query_all("SELECT id FROM user_videos WHERE id = ANY('{#{videos.join(",")}}')", as: String)
+  videos -= exists
+
+  if !videos.empty?
+    args = [] of String
+    videos.each_with_index { |video, i| args << "($#{i + 1})" }
+    PG_DB.exec("INSERT INTO user_videos VALUES #{args.join(",")}", videos)
+  end
+
+  body = {
+    "inserted" => videos,
+  }.to_json
+
+  halt env, status_code: 200, response: body
+end
+
+post "/api/channels/submit" do |env|
+  env.response.content_type = "application/json"
+
+  channels = env.params.json["channels"].as(Array(JSON::Any))
+  channels = channels.map { |channel| channel.as_s }
+  channels.select! { |channel| channel.size == 24 && channel.starts_with? "UC" }
+
+  exists = PG_DB.query_all("SELECT ucid FROM user_channels WHERE ucid = ANY('{#{channels.join(",")}}')", as: String)
+  channels -= exists
+
+  if !channels.empty?
+    args = [] of String
+    channels.each_with_index { |video, i| args << "($#{i + 1})" }
+    PG_DB.exec("INSERT INTO user_channels VALUES #{args.join(",")}", channels)
+  end
+
+  body = {
+    "inserted" => channels,
+  }.to_json
+
+  halt env, status_code: 200, response: body
+end
+
 error 404 do |env|
   env.response.content_type = "application/json"
   {
