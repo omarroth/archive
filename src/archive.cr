@@ -426,13 +426,13 @@ post "/api/videos/submit" do |env|
   videos = videos.map { |videos| videos.as_s }
   videos.select! { |video| video.size == 11 }
 
-  exists = PG_DB.query_all("SELECT id FROM user_videos WHERE id = ANY('{#{videos.join(",")}}')", as: String)
+  exists = PG_DB.query_all("SELECT id FROM videos WHERE id = ANY('{#{videos.join(",")}}')", as: String)
   videos -= exists
 
   if !videos.empty?
     args = [] of String
     videos.each_with_index { |video, i| args << "($#{i + 1})" }
-    PG_DB.exec("INSERT INTO user_videos VALUES #{args.join(",")}", videos)
+    PG_DB.exec("INSERT INTO user_videos VALUES #{args.join(",")} ON CONFLICT DO NOTHING", videos)
   end
 
   body = {
@@ -449,13 +449,13 @@ post "/api/channels/submit" do |env|
   channels = channels.map { |channel| channel.as_s }
   channels.select! { |channel| channel.size == 24 && channel.starts_with? "UC" }
 
-  exists = PG_DB.query_all("SELECT ucid FROM user_channels WHERE ucid = ANY('{#{channels.join(",")}}')", as: String)
+  exists = PG_DB.query_all("SELECT ucid FROM channels WHERE ucid = ANY('{#{channels.join(",")}}')", as: String)
   channels -= exists
 
   if !channels.empty?
     args = [] of String
     channels.each_with_index { |video, i| args << "($#{i + 1})" }
-    PG_DB.exec("INSERT INTO user_channels VALUES #{args.join(",")}", channels)
+    PG_DB.exec("INSERT INTO user_channels VALUES #{args.join(",")} ON CONFLICT DO NOTHING", channels)
   end
 
   body = {
