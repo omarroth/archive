@@ -427,6 +427,7 @@ post "/api/videos/submit" do |env|
   videos.select! { |video| video.size == 11 }
 
   exists = PG_DB.query_all("SELECT id FROM videos WHERE id = ANY('{#{videos.join(",")}}')", as: String)
+  exists += PG_DB.query_all("SELECT id FROM user_videos WHERE id = ANY('{#{videos.join(",")}}')", as: String)
   videos -= exists
 
   if !videos.empty?
@@ -450,6 +451,7 @@ post "/api/channels/submit" do |env|
   channels.select! { |channel| channel.size == 24 && channel.starts_with? "UC" }
 
   exists = PG_DB.query_all("SELECT ucid FROM channels WHERE ucid = ANY('{#{channels.join(",")}}')", as: String)
+  exists += PG_DB.query_all("SELECT id FROM user_channels WHERE id = ANY('{#{channels.join(",")}}')", as: String)
   channels -= exists
 
   if !channels.empty?
