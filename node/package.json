@@ -11,6 +11,7 @@
   "license": "ISC",
   "dependencies": {
     "aws4": "^1.8.0",
+    "dnscache": "github:cloudrac3r/dnscache",
     "fast-xml-parser": "^3.12.10",
     "mime": "^2.4.0",
     "node-fetch": "^2.3.0",

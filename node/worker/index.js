@@ -3,6 +3,11 @@ const fs = require("fs");
 const zlib = require("zlib");
 const sqlite = require("sqlite");
 const fetch = require("node-fetch");
+const dnscache = require("dnscache")({
+	enable: true,
+	ttl: 600,
+	cachesize: 100
+});
 
 const config = "./config.json";
 
