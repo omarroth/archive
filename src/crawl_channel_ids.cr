@@ -31,9 +31,10 @@ active_threads = 0
 active_channel = Channel(Bool).new
 i = 0
 
-PG_DB.exec("BEGIN")
-PG_DB.exec("DECLARE crawl_channel_ids CURSOR FOR SELECT ucid FROM channels WHERE finished = false OR joined IS NULL")
 loop do
+  PG_DB.exec("BEGIN WORK")
+  PG_DB.exec("DECLARE crawl_channel_ids CURSOR FOR SELECT ucid FROM channels WHERE finished = false OR joined IS NULL")
+
   PG_DB.query("FETCH 10 crawl_channel_ids") do |rs|
     rs.each do
       ucid = rs.read(String)
@@ -86,6 +87,8 @@ loop do
       print "Processed: #{i}\r"
     end
   end
+
+  PG_DB.exec("COMMIT WORK")
 end
 
 def pull_related_channels(ucid)

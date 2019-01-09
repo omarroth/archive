@@ -31,100 +31,104 @@ active_threads = 0
 active_channel = Channel(Bool).new
 i = 0
 
-PG_DB.exec("BEGIN")
-PG_DB.exec("DECLARE pull_channel_videos CURSOR FOR SELECT ucid FROM channels WHERE video_count IS NULL AND joined < '2017-06-01' OR joined IS NULL")
 loop do
-  PG_DB.query("FETCH 10 pull_channel_videos") do |rs|
-    rs.each do
-      ucid = rs.read(String)
+  PG_DB.exec("BEGIN WORK")
+  PG_DB.exec("DECLARE pull_channel_videos CURSOR FOR SELECT ucid FROM channels WHERE video_count IS NULL AND joined < '2017-06-01' OR joined IS NULL")
 
-      if active_threads >= max_threads
-        if active_channel.receive
-          active_threads -= 1
-          i += 1
-        end
+  channels = PG_DB.query_all("FETCH 10 pull_channel_videos", as: String)
+  channels.each do |ucid|
+    if active_threads >= max_threads
+      if active_channel.receive
+        active_threads -= 1
+        i += 1
       end
+    end
 
-      active_threads += 1
-      spawn do
-        ids = [] of String
-        page = 1
-        client = HTTP::Client.new(YT_URL)
+    active_threads += 1
+    spawn do
+      ids = [] of String
+      page = 1
+      client = HTTP::Client.new(YT_URL)
 
-        loop do
-          url = produce_channel_videos_url(ucid, page)
-          response = client.get(url)
+      loop do
+        url = produce_channel_videos_url(ucid, page)
+        response = client.get(url)
 
-          done = false
-          response.body.scan(/vi\\\/(?<video_id>[a-zA-Z0-9_-]{11})/) do |match|
-            if ids.includes? match["video_id"]
-              done = true
-              break
-            end
-
-            ids << match["video_id"]
-          end
-
-          if response.body.scan(/vi\\\/(?<video_id>[a-zA-Z0-9_-]{11})/).size == 0
+        done = false
+        response.body.scan(/vi\\\/(?<video_id>[a-zA-Z0-9_-]{11})/) do |match|
+          if ids.includes? match["video_id"]
             done = true
-          end
-
-          if page == 100
-            done = true
-          end
-
-          if done
             break
           end
 
-          page += 1
+          ids << match["video_id"]
         end
 
-        playlist_ids = [] of String
-        index = 0
-        client = HTTP::Client.new(YT_URL)
+        if response.body.scan(/vi\\\/(?<video_id>[a-zA-Z0-9_-]{11})/).size == 0
+          done = true
+        end
 
-        loop do
-          url = produce_playlist_url(ucid, index)
-          response = client.get(url)
+        if page == 100
+          done = true
+        end
 
-          done = false
-          response.body.scan(/vi\\\/(?<video_id>[a-zA-Z0-9_-]{11})/) do |match|
-            if playlist_ids.includes? match["video_id"]
-              done = true
-              break
-            end
+        if done
+          break
+        end
 
-            playlist_ids << match["video_id"]
-          end
+        page += 1
+      end
 
-          if response.body.scan(/vi\\\/(?<video_id>[a-zA-Z0-9_-]{11})/).size < 100
+      playlist_ids = [] of String
+      index = 0
+      client = HTTP::Client.new(YT_URL)
+
+      loop do
+        url = produce_playlist_url(ucid, index)
+        response = client.get(url)
+
+        done = false
+        response.body.scan(/vi\\\/(?<video_id>[a-zA-Z0-9_-]{11})/) do |match|
+          if playlist_ids.includes? match["video_id"]
             done = true
-          end
-
-          if done
-            ids |= playlist_ids
             break
           end
 
-          index += 100
+          playlist_ids << match["video_id"]
         end
 
-        ids.uniq!
-        video_count = ids.size
-        if !ids.empty?
-          ids = ids.map { |video| "('#{video}', false)" }.join(",")
-          PG_DB.exec("INSERT INTO videos VALUES #{ids} ON CONFLICT DO NOTHING")
+        if response.body.scan(/vi\\\/(?<video_id>[a-zA-Z0-9_-]{11})/).size < 100
+          done = true
         end
 
-        PG_DB.exec("UPDATE channels SET video_count = $1 WHERE ucid = $2", video_count, ucid)
-        active_channel.send(true)
+        if done
+          ids |= playlist_ids
+          break
+        end
+
+        index += 100
       end
 
-      print "Processed: #{i}\r"
+      ids.uniq!
+      video_count = ids.size
+      if !ids.empty?
+        ids = ids.map { |video| "('#{video}', false)" }.join(",")
+        PG_DB.exec("INSERT INTO videos VALUES #{ids} ON CONFLICT DO NOTHING")
+      end
+
+      PG_DB.exec("UPDATE channels SET video_count = $1 WHERE ucid = $2", video_count, ucid)
+      active_channel.send(true)
     end
   end
+
+  if channels.size < 10
+    break
+  end
+
+  print "Processed: #{i}\r"
 end
+
+PG_DB.exec("COMMIT WORK")
 
 def produce_channel_videos_url(ucid, page = 1, auto_generated = nil, sort_by = "newest")
   if auto_generated
