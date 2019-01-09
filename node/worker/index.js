@@ -320,7 +320,7 @@ class AnnotationProcess {
 				}
 			});
 		} else if (backend == "request") {
-			rp(url).then(response => {
+			rp({url, forever: true}).then(response => {
 				this.done(response);
 			}).catch(err => {
 				if (err.constructor.name == "StatusCodeError") {
