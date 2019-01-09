@@ -62,11 +62,12 @@ PG_DB = DB.open PG_URL
 
 class Worker
   DB.mapping({
-    id:            String,
-    ip:            String,
-    reputation:    Int32,
-    disabled:      Bool,
-    current_batch: String?,
+    id:             String,
+    ip:             String,
+    reputation:     Int32,
+    disabled:       Bool,
+    current_batch:  String?,
+    last_committed: Time?,
   })
 end
 
@@ -81,13 +82,75 @@ class Batch
   })
 end
 
+get "/" do |env|
+  env.response.content_type = "text/html"
+  <<-END_HTML
+  <html>
+  <head>
+  <style>
+    body {
+      margin: 40px auto;
+      max-width: 800px;
+      padding: 0 10px;
+      font-family: Open Sans, Arial;
+      color: #454545;
+      line-height: 1.2;
+    }
+  </style>
+  </head>
+  <body>
+    <h2>See <a href="https://github.com/omarroth/archive">here</a> for details</h2>
+  </body>
+  </html>
+  END_HTML
+end
+
+get "/api/stats" do |env|
+  env.response.content_type = "application/json"
+  batch_count = PG_DB.query_one("SELECT count(*) FROM batches", as: Int64)
+  batch_finished, content_size = PG_DB.query_one("SELECT count(*), sum(content_size) FROM batches WHERE finished = true", as: {Int64, Int64})
+  batch_remaining = batch_count - batch_finished
+
+  estimated_video_count = batch_count * 10000
+  estimated_video_finished = batch_finished * 10000
+  estimated_video_remaining = estimated_video_count - estimated_video_finished
+
+  worker_count = PG_DB.query_one("SELECT count(*) FROM workers", as: Int64)
+  worker_active = PG_DB.query_one("SELECT count(*) FROM workers WHERE (CURRENT_TIMESTAMP - last_committed) < interval '1 hour'", as: Int64)
+
+  response = {
+    "batch_count"               => batch_count,
+    "batch_finished"            => batch_finished,
+    "batch_remaining"           => batch_remaining,
+    "content_size"              => content_size,
+    "estimated_video_count"     => estimated_video_count,
+    "estimated_video_finished"  => estimated_video_finished,
+    "estimated_video_remaining" => estimated_video_remaining,
+    "worker_count"              => worker_count,
+    "worker_active"             => worker_active,
+  }.to_pretty_json
+  halt env, status_code: 200, response: response
+end
+
+get "/api/workers" do |env|
+  env.response.content_type = "application/json"
+
+  remote_address = env.as(HTTP::Server::NewContext).remote_address.address
+  workers = PG_DB.query_all("SELECT id FROM workers WHERE ip = $1", remote_address, as: String)
+
+  response = {
+    "workers" => workers,
+  }.to_json
+  halt env, status_code: 200, response: response
+end
+
 post "/api/workers/create" do |env|
   env.response.content_type = "application/json"
 
   remote_address = env.as(HTTP::Server::NewContext).remote_address.address
   worker_count = PG_DB.query_one("SELECT count(*) FROM workers WHERE ip = $1", remote_address, as: Int64)
 
-  if worker_count > 10
+  if worker_count > 100
     response = {
       "error"      => "Too many workers for IP",
       "error_code" => 1,
@@ -108,7 +171,7 @@ end
 post "/api/batches" do |env|
   env.response.content_type = "application/json"
 
-  worker_id = env.params.body["worker_id"]
+  worker_id = env.params.json["worker_id"].as(String)
   worker = PG_DB.query_one?("SELECT * FROM workers WHERE id = $1", worker_id, as: Worker)
 
   if !worker
@@ -139,6 +202,8 @@ post "/api/batches" do |env|
   # Check trusted workers less often
   if rand(worker.reputation + 1) == 0 && PG_DB.query_one("SELECT count(*) FROM batches WHERE finished = true", as: Int64) != 0
     select_finished = true
+  elsif PG_DB.query_one("SELECT count(*) FROM batches WHERE finished = false", as: Int64) == 0
+    select_finished = true
   else
     select_finished = false
   end
@@ -159,7 +224,7 @@ end
 post "/api/batches/:batch_id" do |env|
   env.response.content_type = "application/json"
 
-  worker_id = env.params.body["worker_id"]
+  worker_id = env.params.json["worker_id"].as(String)
   batch_id = env.params.url["batch_id"]
 
   worker = PG_DB.query_one?("SELECT * FROM workers WHERE id = $1", worker_id, as: Worker)
@@ -201,9 +266,9 @@ end
 post "/api/commit" do |env|
   env.response.content_type = "application/json"
 
-  worker_id = env.params.body["worker_id"]
-  batch_id = env.params.body["batch_id"]
-  content_size = env.params.body["content_size"].try &.to_i?
+  worker_id = env.params.json["worker_id"].as(String)
+  batch_id = env.params.json["batch_id"].as(String)
+  content_size = env.params.json["content_size"].as(Int64)
   content_size ||= 0
 
   worker = PG_DB.query_one?("SELECT * FROM workers WHERE id = $1", worker_id, as: Worker)
@@ -253,14 +318,14 @@ post "/api/commit" do |env|
 
   if batch.finished && batch.content_size
     if ((content_size - batch.content_size.not_nil!).to_f / batch.content_size.not_nil!.to_f).abs < CONTENT_THRESHOLD
-      PG_DB.exec("UPDATE workers SET reputation = reputation + 1, current_batch = NULL WHERE id = $1", worker_id)
+      PG_DB.exec("UPDATE workers SET reputation = reputation + 1, current_batch = NULL, last_committed = $1 WHERE id = $2", Time.now, worker_id)
 
       response = {
         "upload_url" => "",
       }.to_json
       halt env, status_code: 200, response: response
     else
-      PG_DB.exec("UPDATE workers SET reputation = reputation - 5 WHERE id = $1", worker.id)
+      PG_DB.exec("UPDATE workers SET reputation = reputation - 10 WHERE id = $1", worker.id)
       PG_DB.exec("UPDATE workers SET disabled = true WHERE reputation < 0 AND id = $1", worker.id)
 
       response = {
@@ -295,8 +360,8 @@ end
 post "/api/finalize" do |env|
   env.response.content_type = "application/json"
 
-  worker_id = env.params.body["worker_id"]
-  batch_id = env.params.body["batch_id"]
+  worker_id = env.params.json["worker_id"].as(String)
+  batch_id = env.params.json["batch_id"].as(String)
 
   worker = PG_DB.query_one?("SELECT * FROM workers WHERE id = $1", worker_id, as: Worker)
 
@@ -349,9 +414,73 @@ post "/api/finalize" do |env|
   content_size = response.headers["Content-Length"].to_i
 
   PG_DB.exec("UPDATE batches SET content_size = $1, finished = $2 WHERE id = $3", content_size, true, batch.id)
-  PG_DB.exec("UPDATE workers SET reputation = reputation + 1, current_batch = NULL WHERE id = $1", worker_id)
+  PG_DB.exec("UPDATE workers SET reputation = reputation + 1, current_batch = NULL, last_committed = $1 WHERE id = $2", Time.now, worker_id)
 
-  halt env, status_code: 200
+  halt env, status_code: 204, response: ""
+end
+
+post "/api/videos/submit" do |env|
+  env.response.content_type = "application/json"
+
+  videos = env.params.json["videos"].as(Array(JSON::Any))
+  videos = videos.map { |videos| videos.as_s }
+  videos.select! { |video| video.match(/[A-Za-z0-9_-]{11}/) }
+
+  exists = PG_DB.query_all("SELECT id FROM videos WHERE id = ANY('{#{videos.join(",")}}')", as: String)
+  exists += PG_DB.query_all("SELECT id FROM user_videos WHERE id = ANY('{#{videos.join(",")}}')", as: String)
+  videos -= exists
+
+  if !videos.empty?
+    args = [] of String
+    videos.each_with_index { |video, i| args << "($#{i + 1})" }
+    PG_DB.exec("INSERT INTO user_videos VALUES #{args.join(",")} ON CONFLICT DO NOTHING", videos)
+  end
+
+  body = {
+    "inserted" => videos,
+  }.to_json
+
+  halt env, status_code: 200, response: body
+end
+
+post "/api/channels/submit" do |env|
+  env.response.content_type = "application/json"
+
+  channels = env.params.json["channels"].as(Array(JSON::Any))
+  channels = channels.map { |channel| channel.as_s }
+  channels.select! { |channel| channel.match(/UC[A-Za-z0-9_-]{22}/) }
+
+  exists = PG_DB.query_all("SELECT ucid FROM channels WHERE ucid = ANY('{#{channels.join(",")}}')", as: String)
+  exists += PG_DB.query_all("SELECT id FROM user_channels WHERE id = ANY('{#{channels.join(",")}}')", as: String)
+  channels -= exists
+
+  if !channels.empty?
+    args = [] of String
+    channels.each_with_index { |video, i| args << "($#{i + 1})" }
+    PG_DB.exec("INSERT INTO user_channels VALUES #{args.join(",")} ON CONFLICT DO NOTHING", channels)
+  end
+
+  body = {
+    "inserted" => channels,
+  }.to_json
+
+  halt env, status_code: 200, response: body
+end
+
+error 404 do |env|
+  env.response.content_type = "application/json"
+  {
+    "error"      => "404 Not Found",
+    "error_code" => 404,
+  }.to_pretty_json
+end
+
+error 500 do |env|
+  env.response.content_type = "application/json"
+  {
+    "error"      => "500 Internal Server error",
+    "error_code" => 500,
+  }.to_pretty_json
 end
 
 if PG_DB.query_one("SELECT count(*) FROM batches WHERE finished = true", as: Int64) == 0

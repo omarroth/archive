@@ -29,15 +29,19 @@ end
 
 active_threads = 0
 active_channel = Channel(Bool).new
+i = 0
 
+PG_DB.exec("BEGIN")
+PG_DB.exec("DECLARE pull_channel_videos CURSOR FOR SELECT ucid FROM channels WHERE video_count IS NULL AND joined < '2017-06-01' OR joined IS NULL")
 loop do
-  PG_DB.query("SELECT ucid FROM channels WHERE video_count IS NULL AND joined < '2017-06-01'") do |rs|
+  PG_DB.query("FETCH 1000000 pull_channel_videos") do |rs|
     rs.each do
       ucid = rs.read(String)
 
       if active_threads >= max_threads
         if active_channel.receive
           active_threads -= 1
+          i += 1
         end
       end
 
@@ -117,9 +121,7 @@ loop do
         active_channel.send(true)
       end
 
-      remaining = PG_DB.query_one("SELECT count(*) FROM channels WHERE video_count IS NULL AND joined < '2017-06-01'", as: Int64)
-      finished = PG_DB.query_one("SELECT count(*) FROM channels WHERE video_count IS NOT NULL AND joined < '2017-06-01'", as: Int64)
-      print "Remaining: #{remaining}, processed: #{finished}\r"
+      print "Processed: #{i}\r"
     end
   end
 end

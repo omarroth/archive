@@ -4,6 +4,11 @@ const zlib = require("zlib");
 const sqlite = require("sqlite");
 const fetch = require("node-fetch");
 const http = require("http");
+const dnscache = require("dnscache")({
+	enable: true,
+	ttl: 600,
+	cachesize: 100
+});
 
 const config = "./node/worker/config.json";
 
@@ -194,20 +199,21 @@ class BatchProcess {
 			}
 			drawProgress(true);
 			let remainingProcesses = 0;
+			const performDBWrite = async (abortOnLock) => {
+				if (abortOnLock && dbLockManager.locked) return;
+				await dbLockManager.promise();
+				await this.worker.db.run("BEGIN TRANSACTION");
+				await Promise.all(cacheBuffer.map(id => this.worker.db.run("INSERT INTO Cache VALUES (?, ?)", [id, results[id]])));
+				await this.worker.db.run("END TRANSACTION");
+				cacheBuffer = [];
+				dbLockManager.unlock();
+			}
 			await new Promise(resolve => {
 				const callback = (id, response) => {
 					results[id] = response;
 					cacheBuffer.push(id);
 					if (cacheBuffer.length >= this.worker.config.cacheFrequency) {
-						(async () => {
-							if (dbLockManager.locked) return;
-							await dbLockManager.promise();
-							await this.worker.db.run("BEGIN TRANSACTION");
-							await Promise.all(cacheBuffer.map(id => this.worker.db.run("INSERT INTO Cache VALUES (?, ?)", [id, results[id]])));
-							await this.worker.db.run("END TRANSACTION");
-							cacheBuffer = [];
-							dbLockManager.unlock();
-						})();
+						performDBWrite(true);
 					}
 					completed++;
 					drawProgress();
@@ -224,6 +230,7 @@ class BatchProcess {
 			});
 			drawProgress(true);
 			process.stdout.write("\n");
+			await performDBWrite();
 			console.log("All annotations fetched");
 			let toCompress = JSON.stringify(results);
 			process.stdout.write("Compressing "+(toCompress.length/1e6).toFixed(1)+"MB of data... ");

@@ -6,13 +6,24 @@ require "option_parser"
 YT_URL = URI.parse("https://www.youtube.com")
 
 batch_url = URI.parse("http://localhost:3000")
+max_threads = 10
+
 OptionParser.parse! do |parser|
   parser.on("-u URL", "--batch-url=URL", "Master server URL") { |url| batch_url = URI.parse(url) }
+  parser.on("-t THREADS", "--max-threads=THREADS", "Number of threads for downloading annotations") { |threads| max_threads = threads.to_i }
+  parser.on("-h", "--help", "Show this help") { puts parser }
 end
 
-batch_client = HTTP::Client.new(batch_url)
-batch_client.read_timeout = 10.seconds
-batch_client.connect_timeout = 10.seconds
+def make_client(url)
+  client = HTTP::Client.new(url)
+  client.read_timeout = 10.seconds
+  client.connect_timeout = 10.seconds
+
+  return client
+end
+
+batch_headers = HTTP::Headers.new
+batch_headers["Content-Type"] = "application/json"
 
 if File.exists? ".worker_info"
   body = JSON.parse(File.read(".worker_info"))
@@ -20,7 +31,8 @@ if File.exists? ".worker_info"
   worker_id = body["worker_id"].as_s
   s3_url = body["s3_url"].as_s
 else
-  response = batch_client.post("/api/workers/create")
+  batch_client = make_client(batch_url)
+  response = batch_client.post("/api/workers/create", batch_headers)
   body = JSON.parse(response.body)
 
   if response.status_code == 200
@@ -34,16 +46,15 @@ else
 end
 
 s3_url = URI.parse(s3_url)
-s3_client = HTTP::Client.new(s3_url)
-
 response = HTTP::Client::Response.new(500)
 body = JSON::Any.new(nil)
 
 loop do
   begin
-    response = batch_client.post("/api/batches", form: {
+    batch_client = make_client(batch_url)
+    response = batch_client.post("/api/batches", batch_headers, body: {
       "worker_id" => worker_id,
-    })
+    }.to_json)
   rescue ex
     next
   end
@@ -61,9 +72,10 @@ loop do
       batch_id = body["batch_id"].as_s
       puts "Continuing #{batch_id}..."
 
-      response = batch_client.post("/api/batches/#{batch_id}", form: {
+      batch_client = make_client(batch_url)
+      response = batch_client.post("/api/batches/#{batch_id}", batch_headers, body: {
         "worker_id" => worker_id,
-      })
+      }.to_json)
       body = JSON.parse(response.body)
 
       if response.status_code == 200
@@ -80,28 +92,41 @@ loop do
     end
   end
 
-  yt_client = HTTP::Client.new(YT_URL)
   annotations = {} of String => String
 
-  # TODO: Multi-thread, multiple connections
-  # TODO: Write to tempfile to reduce memory usage
-  # TODO: Write to tempfile for continuation
-  # Main worker loop
+  active_threads = 0
+  active_channel = Channel({String, String}).new
+
+  # Main loop
   objects.each do |id|
-    id = id.as_s
+    video_id = id.as_s
 
-    loop do
-      begin
-        response = yt_client.get("/annotations_invideo?video_id=#{id}&gl=US&hl=en")
-        if response.status_code == 200
-          annotations[id] = response.body
-        else
-          annotations[id] = ""
-        end
+    if active_threads >= max_threads
+      if thread_response = active_channel.receive
+        response_id, response_body = thread_response
 
+        annotations[response_id] = response_body
+        active_threads -= 1
         print "Got annotations for #{annotations.keys.size}/#{objects.size} videos    \r"
-        break
-      rescue ex
+      end
+    end
+
+    active_threads += 1
+    spawn do
+      loop do
+        begin
+          yt_client = make_client(YT_URL)
+          response = yt_client.get("/annotations_invideo?video_id=#{id}&gl=US&hl=en")
+
+          if response.status_code == 200
+            active_channel.send({video_id, response.body})
+          else
+            active_channel.send({video_id, ""})
+          end
+
+          break
+        rescue
+        end
       end
     end
   end
@@ -109,6 +134,8 @@ loop do
   content = annotations.to_json.to_slice
   uncompressed_size = content.size
   puts "All annotations collected (#{(uncompressed_size.to_f / 1024**2).round(1)} MiB)    "
+
+  puts "Compressing..."
 
   Gzip::Writer.open(io = IO::Memory.new) do |gzip|
     gzip.write(content)
@@ -118,11 +145,21 @@ loop do
   content = io.gets_to_end
   content_size = content.size
 
-  response = batch_client.post("/api/commit", form: {
-    "worker_id"    => worker_id,
-    "batch_id"     => batch_id,
-    "content_size" => "#{content_size}",
-  })
+  puts "Committing..."
+
+  loop do
+    begin
+      batch_client = make_client(batch_url)
+      response = batch_client.post("/api/commit", batch_headers, body: {
+        "worker_id"    => worker_id,
+        "batch_id"     => batch_id,
+        "content_size" => content_size,
+      }.to_json)
+
+      break
+    rescue ex
+    end
+  end
 
   body = JSON.parse(response.body)
 
@@ -143,6 +180,7 @@ loop do
   puts "Uploading to S3..."
   loop do
     begin
+      s3_client = make_client(s3_url)
       response = s3_client.put(upload_url, body: content)
       break
     rescue ex
@@ -150,12 +188,13 @@ loop do
   end
 
   if response.status_code == 200
-    response = batch_client.post("/api/finalize", form: {
+    batch_client = make_client(batch_url)
+    response = batch_client.post("/api/finalize", batch_headers, body: {
       "worker_id" => worker_id,
       "batch_id"  => batch_id,
-    })
+    }.to_json)
 
-    if response.status_code == 200
+    if response.status_code == 204
       puts "Finished #{batch_id}"
     else
       body = JSON.parse(response.body)
