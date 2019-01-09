@@ -31,10 +31,10 @@ active_threads = 0
 active_channel = Channel(Bool).new
 i = 0
 
-loop do
-  PG_DB.exec("BEGIN WORK")
-  PG_DB.exec("DECLARE pull_channel_videos CURSOR FOR SELECT ucid FROM channels WHERE video_count IS NULL AND joined < '2017-06-01' OR joined IS NULL")
+PG_DB.exec("BEGIN WORK")
+PG_DB.exec("DECLARE pull_channel_videos CURSOR FOR SELECT ucid FROM channels WHERE video_count IS NULL AND joined < '2017-06-01' OR joined IS NULL")
 
+loop do
   channels = PG_DB.query_all("FETCH 10 pull_channel_videos", as: String)
   channels.each do |ucid|
     if active_threads >= max_threads
