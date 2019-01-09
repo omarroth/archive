@@ -34,7 +34,7 @@ i = 0
 PG_DB.exec("BEGIN")
 PG_DB.exec("DECLARE pull_channel_videos CURSOR FOR SELECT ucid FROM channels WHERE video_count IS NULL AND joined < '2017-06-01' OR joined IS NULL")
 loop do
-  PG_DB.query("FETCH 1000000 pull_channel_videos") do |rs|
+  PG_DB.query("FETCH 10 pull_channel_videos") do |rs|
     rs.each do
       ucid = rs.read(String)
 

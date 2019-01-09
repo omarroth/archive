@@ -34,7 +34,7 @@ i = 0
 PG_DB.exec("BEGIN")
 PG_DB.exec("DECLARE crawl_channel_ids CURSOR FOR SELECT ucid FROM channels WHERE finished = false OR joined IS NULL")
 loop do
-  PG_DB.query("FETCH 1000000 crawl_channel_ids") do |rs|
+  PG_DB.query("FETCH 10 crawl_channel_ids") do |rs|
     rs.each do
       ucid = rs.read(String)
 
