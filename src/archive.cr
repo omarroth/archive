@@ -459,7 +459,7 @@ post "/api/channels/submit" do |env|
   channels.select! { |channel| channel.match(/UC[A-Za-z0-9_-]{22}/) }
 
   exists = PG_DB.query_all("SELECT ucid FROM channels WHERE ucid = ANY('{#{channels.join(",")}}')", as: String)
-  exists += PG_DB.query_all("SELECT id FROM user_channels WHERE id = ANY('{#{channels.join(",")}}')", as: String)
+  exists += PG_DB.query_all("SELECT ucid FROM user_channels WHERE ucid = ANY('{#{channels.join(",")}}')", as: String)
   channels -= exists
 
   if !channels.empty?
