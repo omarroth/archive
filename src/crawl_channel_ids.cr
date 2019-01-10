@@ -31,11 +31,8 @@ active_threads = 0
 active_channel = Channel(Bool).new
 i = 0
 
-PG_DB.exec("BEGIN WORK")
-PG_DB.exec("DECLARE crawl_channel_ids CURSOR FOR SELECT ucid FROM channels WHERE finished = false OR joined IS NULL")
-
 loop do
-  channels = PG_DB.query_all("FETCH 10 crawl_channel_ids", as: String)
+  channels = PG_DB.query_all("SELECT ucid FROM channels WHERE finished = false", as: String)
   channels.each do |ucid|
     if active_threads >= max_threads
       if active_channel.receive
@@ -89,8 +86,6 @@ loop do
 
   print "Processed: #{i}\r"
 end
-
-PG_DB.exec("COMMIT WORK")
 
 def pull_related_channels(ucid)
   client = HTTP::Client.new(YT_URL)

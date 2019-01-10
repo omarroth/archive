@@ -32,9 +32,10 @@ active_channel = Channel(Bool).new
 i = 0
 
 PG_DB.exec("BEGIN")
-PG_DB.exec("DECLARE crawl_videos CURSOR FOR SELECT id FROM videos WHERE finished = false")
+PG_DB.exec("DECLARE crawl_videos CURSOR FOR SELECT id FROM videos")
+
 loop do
-  PG_DB.query("FETCH 1000000 crawl_videos") do |rs|
+  PG_DB.query("FETCH 100000 crawl_videos") do |rs|
     rs.each do
       id = rs.read(String)
 
@@ -57,64 +58,19 @@ loop do
             raise "Invalid url"
           end
 
-          published = html.xpath_node(%q(//meta[@itemprop="datePublished"])).try &.["content"]
-          if published
-            published = Time.parse(published, "%Y-%m-%d", Time::Location.local)
-          end
-          published ||= "2005-01-01"
-
           recommended_videos = html.xpath_nodes(%q(//*[@data-vid])).map do |node|
             node["data-vid"]
           end
 
           if !recommended_videos.empty?
             recommended_videos = recommended_videos.map { |channel| "('#{channel}', false)" }.join(",")
-            PG_DB.exec("INSERT INTO videos VALUES #{recommended_videos} ON CONFLICT DO NOTHING")
+            PG_DB.exec("INSERT INTO videos VALUES #{recommended_videos} ON CONFLICT (id) DO NOTHING")
           end
 
           uploader = html.xpath_node(%q(//*[@data-channel-external-id])).try &.["data-channel-external-id"]
           if uploader
-            PG_DB.exec("INSERT INTO channels VALUES ($1, $2) ON CONFLICT (ucid) DO NOTHING", uploader, true)
+            PG_DB.exec("INSERT INTO channels VALUES ($1, $2) ON CONFLICT (ucid) DO NOTHING", uploader, false)
           end
-
-          session_token = response.body.match(/'XSRF_TOKEN': "(?<session_token>[A-Za-z0-9\_\-\=]+)"/)
-          itct = response.body.match(/itct=(?<itct>[^"]+)"/)
-          ctoken = response.body.match(/'COMMENTS_TOKEN': "(?<ctoken>[^"]+)"/)
-
-          if session_token && itct && ctoken && response
-            session_token = session_token["session_token"]
-            itct = itct["itct"]
-            ctoken = ctoken["ctoken"]
-
-            request = HTTP::Params.encode({
-              "session_token" => session_token,
-            })
-
-            headers = HTTP::Headers.new
-            headers["cookie"] = response.cookies.add_request_headers(headers)["cookie"]
-            headers["content-type"] = "application/x-www-form-urlencoded"
-
-            headers["x-client-data"] = "CIi2yQEIpbbJAQipncoBCNedygEIqKPKAQ=="
-            headers["x-spf-previous"] = "https://www.youtube.com/watch?v=#{id}&gl=US&hl=en&disable_polymer=1&has_verified=1&bpctr=9999999999"
-            headers["x-spf-referer"] = "https://www.youtube.com/watch?v=#{id}&gl=US&hl=en&disable_polymer=1&has_verified=1&bpctr=9999999999"
-
-            headers["x-youtube-client-name"] = "1"
-            headers["x-youtube-client-version"] = "2.20180719"
-
-            response = client.post("/comment_service_ajax?action_get_comments=1&pbj=1&ctoken=#{ctoken}&continuation=#{ctoken}&itct=#{itct}&hl=en&gl=US", headers, request)
-
-            ucids = [] of String
-            response.body.scan(/"(?<channel_id>UC[a-zA-Z0-9_-]{22})"/) do |match|
-              ucids << match["channel_id"]
-            end
-
-            if !ucids.empty?
-              ucids = ucids.map { |channel| "('#{channel}', false)" }.join(",")
-              PG_DB.exec("INSERT INTO channels VALUES #{ucids} ON CONFLICT DO NOTHING")
-            end
-          end
-
-          PG_DB.exec("UPDATE videos SET finished = true, published = $2 WHERE id = $1", id, published)
         rescue ex
         end
 
