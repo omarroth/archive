@@ -232,7 +232,13 @@ class BatchProcess {
 			process.stdout.write("done, new size is "+(gzipData.length/1e6).toFixed(1)+" MB\n");
 			process.stdout.write("Committing... ");
 			let commitResponse = await this.worker.workerRequest("/api/commit", {body: {batch_id: this.batchID, content_size: gzipData.length}});
-			if (commitResponse.error_code) throw commitResponse;
+			if (commitResponse.error_code) {
+				if (commitResponse.error_code == 8) {
+					console.log("\nDumping failed batch to disk: batch.json.gz");
+					await new Promise(resolve => fs.writeFile("batch.json.gz", gzipData, {encoding: null}, resolve));
+				}
+				throw new Error(commitResponse.error);
+			}
 			if (commitResponse.upload_url) {
 				process.stdout.write("uploading... ");
 				await rp({
