@@ -95,7 +95,6 @@ const methods = [
 		name: "No Views",
 		blacklisted: false,
 		code: async () => {
-			console.log("Using No Views for starting ID");
 			let data = {channels: [], videos: []};
 			let body = await rp("https://www.randomlyinspired.com/noviews");
 			let match = body.match(/embed\/([\w-]+)/);
@@ -108,7 +107,6 @@ const methods = [
 		name: "Random word",
 		blacklisted: false,
 		code: async () => {
-			console.log("Using random word for starting ID");
 			if (!config.useInvidious) throw "Invidious is disabled, cannot search YouTube.";
 			let data = {channels: [], videos: []};
 			let words = await rp({
@@ -127,6 +125,23 @@ const methods = [
 				data.channels.push(result.authorId);
 			}
 			console.log("Search gave "+data.videos.length+" results");
+			return data;
+		}
+	},{
+		name: "HookTube random",
+		blacklisted: false,
+		code: async () => {
+			let data = {channels: [], videos: []};
+			let redirect = await rp({
+				url: "https://hooktube.com/random",
+				simple: false,
+				resolveWithFullResponse: true,
+				followRedirect: false
+			});
+			let match = redirect.headers.location.match(/watch\?v=([\w-]+)/);
+			if (!match) throw "HookTube random failed, couldn't match location: "+redirect.headers.location;
+			data.videos.push(match[1]);
+			console.log("HookTube gave us these IDs:", data.videos);
 			return data;
 		}
 	}
