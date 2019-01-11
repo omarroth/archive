@@ -109,6 +109,7 @@ const methods = [
 		blacklisted: false,
 		code: async () => {
 			console.log("Using random word for starting ID");
+			if (!config.useInvidious) throw "Invidious is disabled, cannot search YouTube.";
 			let data = {channels: [], videos: []};
 			let words = await rp({
 				url: "https://random-word.ryanrk.com/api/en/word/random",
@@ -136,15 +137,18 @@ const crawlers = {
 		if (!ids || !ids.length) throw new Error("Video crawler was given nothing to crawl");
 		console.log("Crawling "+ids.length+" videos for recommendations");
 		let progress = 0;
+		let max = ids.length;
 		function writeProgress(done) {
-			process.stdout.write("\r"+progressBar(progress, ids.length, 50));
+			process.stdout.write("\r"+progressBar(progress, max, 50));
 			if (done) process.stdout.write("\n");
 		}
 		writeProgress();
-		return Promise.all(
+		let promise;
+		if (config.useInvidious) promise = Promise.all(
 			ids.map(async id => {
+				let result;
 				await invidiousLocker.promise();
-				let result = await untilItWorks(() => new Promise((resolve, reject) => {
+				result = await untilItWorks(() => new Promise((resolve, reject) => {
 					rp({
 						url: invidious+"/api/v1/videos/"+id,
 						json: true,
@@ -173,6 +177,43 @@ const crawlers = {
 					data.channels.push(result.authorId);
 				}
 			}
+			return data;
+		});
+		else promise = new Promise(resolve => {
+			let data = {videos: [], channels: []};
+			let ongoing = 0;
+			while (ongoing < config.processConcurrentLimit && ids.length) {
+				ongoing++;
+				startNew();
+			}
+			function callback() {
+				progress++;
+				writeProgress();
+				if (ids.length) {
+					startNew();
+				} else {
+					if (!--ongoing) {
+						writeProgress(true);
+						resolve(data);
+					}
+				}
+			}
+			function startNew() {
+				untilItWorks(() => rp({
+					url: `https://www.youtube.com/watch?v=${ids.shift()}&disable_polymer=1`,
+					forever: true
+				})).then(body => {
+					body.replace(/\/watch\?v=([\w-]{11}).*thumb-link/g, (string, extract) => {
+						data.videos.push(extract);
+					});
+					body.replace(/\/channel\/([\w-]{24})/g, (string, extract) => {
+						data.channels.push(extract);
+					});
+					callback();
+				});
+			}
+		});
+		return promise.then(data => {
 			console.log(`Gathered ${data.videos.length}/${data.channels.length} recommendations`);
 			return submitAndCrawl(data);
 		});
@@ -187,7 +228,7 @@ function selectBestMethod() {
 	if (!pool.length) {
 		console.log("Resetting blacklist");
 		for (let m of methods) m.blacklisted = false;
-		return this();
+		return selectBestMethod();
 	}
 	// Check priority
 	let prioritied = pool.filter(m => m.priority);
@@ -208,7 +249,7 @@ function selectBestMethod() {
 			console.log(err);
 			console.log("Method failed, adding to blacklist and retrying");
 			method.blacklisted = true;
-			resolve(this());
+			resolve(selectBestMethod());
 		});
 	});
 }
