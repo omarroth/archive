@@ -261,13 +261,13 @@ function submitAndCrawl(data) {
 			if (data[k].length) {
 				let toSubmit = {};
 				toSubmit[k] = data[k].unique();
-				return fetch(config.master+"/api/"+k+"/submit", {
+				return untilItWorks(() => fetch(config.master+"/api/"+k+"/submit", {
 					method: "POST",
 					body: JSON.stringify(toSubmit),
 					headers: {
 						"Content-Type": "application/json"
 					}
-				}).then(res => res.json());
+				})).then(res => res.json());
 			} else {
 				return Promise.resolve({inserted: [], def: true});
 			}
