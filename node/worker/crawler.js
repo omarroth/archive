@@ -204,10 +204,10 @@ const crawlers = {
 					forever: true
 				})).then(body => {
 					body.replace(/\/watch\?v=([\w-]{11}).*thumb-link/g, (string, extract) => {
-						data.videos.push(extract);
+						data.videos.push(Buffer.from(extract).toString()); // https://github.com/nodejs/help/issues/711
 					});
 					body.replace(/\/channel\/([\w-]{24})/g, (string, extract) => {
-						data.channels.push(extract);
+						data.channels.push(Buffer.from(extract).toString()); // https://github.com/nodejs/help/issues/711
 					});
 					callback();
 				});
