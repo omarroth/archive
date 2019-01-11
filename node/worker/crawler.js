@@ -78,14 +78,14 @@ class LockManager {
 }
 let invidiousLocker = new LockManager(config.invidiousGlobalConcurrentLimit);
 
-function untilItWorks(code, silence) {
+function untilItWorks(code, silence, timeout = 1000) {
 	return new Promise(resolve => {
 		code().then(resolve).catch(err => {
 			if (!silence) {
 				console.log("Something didn't work, but hopefully will next time.");
 				console.log(err);
 			}
-			resolve(untilItWorks(code));
+			setTimeout(() => resolve(untilItWorks(code)), timeout);
 		});
 	});
 }
@@ -267,7 +267,7 @@ function submitAndCrawl(data) {
 					headers: {
 						"Content-Type": "application/json"
 					}
-				})).then(res => res.json());
+				}), false, 4000).then(res => res.json());
 			} else {
 				return Promise.resolve({inserted: [], def: true});
 			}
