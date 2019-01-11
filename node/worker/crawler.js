@@ -78,11 +78,13 @@ class LockManager {
 }
 let invidiousLocker = new LockManager(config.invidiousGlobalConcurrentLimit);
 
-function untilItWorks(code) {
+function untilItWorks(code, silence) {
 	return new Promise(resolve => {
 		code().then(resolve).catch(err => {
-			console.log("Something didn't work, but hopefully will next time.");
-			console.log(err);
+			if (!silence) {
+				console.log("Something didn't work, but hopefully will next time.");
+				console.log(err);
+			}
 			resolve(untilItWorks(code));
 		});
 	});
@@ -142,11 +144,21 @@ const crawlers = {
 		return Promise.all(
 			ids.map(async id => {
 				await invidiousLocker.promise();
-				let result = await untilItWorks(() => rp({
-					url: invidious+"/api/v1/videos/"+id,
-					json: true,
-					timeout: 20000
-				}));
+				let result = await untilItWorks(() => new Promise((resolve, reject) => {
+					rp({
+						url: invidious+"/api/v1/videos/"+id,
+						json: true,
+						timeout: 20000
+					}).then(resolve).catch(err => {
+						if (err.name == "RequestError") {
+							reject(err);
+						} else {
+							console.log(err);
+							console.log("=== NAME: "+err.name);
+							resolve(undefined);
+						}
+					});
+				}), true);
 				invidiousLocker.unlock();
 				progress++;
 				writeProgress();
@@ -156,8 +168,10 @@ const crawlers = {
 			writeProgress(true);
 			let data = {videos: [], channels: []};
 			for (let result of results) {
-				data.videos = data.videos.concat(result.recommendedVideos.map(v => v.videoId));
-				data.channels.push(result.authorId);
+				if (result) {
+					data.videos = data.videos.concat(result.recommendedVideos.map(v => v.videoId));
+					data.channels.push(result.authorId);
+				}
 			}
 			console.log(`Gathered ${data.videos.length}/${data.channels.length} recommendations`);
 			return submitAndCrawl(data);
@@ -226,7 +240,7 @@ function submitAndCrawl(data) {
 			`Submitted ${data.videos.length}/${data.channels.length}, `+
 			`inserted ${sp(keyedResults, "videos.inserted.length", 0)}/${sp(keyedResults, "channels.inserted.length", 0)}`
 		);
-		if (sp(keyedResults, "videos.inserted.length", 0)) return crawlers.videos(keyedResults.videos.inserted);
+		if (sp(keyedResults, "videos.inserted.length", 0)) return crawlers.videos(keyedResults.videos.inserted.slice(0, config.crawlLimit));
 	});
 }
 
