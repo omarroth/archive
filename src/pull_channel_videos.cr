@@ -31,22 +31,25 @@ active_threads = 0
 active_channel = Channel(Bool).new
 i = 0
 
+fetch_count = 10000
+
 PG_DB.exec("BEGIN WORK")
 PG_DB.exec("DECLARE pull_channel_videos CURSOR FOR SELECT ucid FROM channels WHERE video_count IS NULL AND joined < '2017-06-01' OR joined IS NULL")
 
 loop do
-  channels = PG_DB.query_all("FETCH 10 pull_channel_videos", as: String)
+  channels = PG_DB.query_all("FETCH #{fetch_count} pull_channel_videos", as: String)
   channels.each do |ucid|
     if active_threads >= max_threads
       if active_channel.receive
         active_threads -= 1
         i += 1
+        print "Processed: #{i}\r"
       end
     end
 
     active_threads += 1
     spawn do
-      ids = [] of String
+      videos = [] of String
       page = 1
       client = HTTP::Client.new(YT_URL)
 
@@ -56,12 +59,12 @@ loop do
 
         done = false
         response.body.scan(/vi\\\/(?<video_id>[a-zA-Z0-9_-]{11})/) do |match|
-          if ids.includes? match["video_id"]
+          if videos.includes? match["video_id"]
             done = true
             break
           end
 
-          ids << match["video_id"]
+          videos << match["video_id"]
         end
 
         if response.body.scan(/vi\\\/(?<video_id>[a-zA-Z0-9_-]{11})/).size == 0
@@ -102,30 +105,29 @@ loop do
         end
 
         if done
-          ids |= playlist_ids
+          videos |= playlist_ids
           break
         end
 
         index += 100
       end
 
-      ids.uniq!
-      video_count = ids.size
-      if !ids.empty?
-        ids = ids.map { |video| "('#{video}', false)" }.join(",")
-        PG_DB.exec("INSERT INTO videos VALUES #{ids} ON CONFLICT DO NOTHING")
+      videos.uniq!
+
+      if !videos.empty?
+        videos = videos.map { |video| "('#{video}', false)" }.join(",")
+        PG_DB.exec("INSERT INTO videos VALUES #{videos} ON CONFLICT (id) DO NOTHING")
       end
 
+      video_count = videos.size
       PG_DB.exec("UPDATE channels SET video_count = $1 WHERE ucid = $2", video_count, ucid)
       active_channel.send(true)
     end
   end
 
-  if channels.size < 10
+  if channels.size < fetch_count
     break
   end
-
-  print "Processed: #{i}\r"
 end
 
 PG_DB.exec("COMMIT WORK")

@@ -58,13 +58,13 @@ loop do
             raise "Invalid url"
           end
 
-          recommended_videos = html.xpath_nodes(%q(//*[@data-vid])).map do |node|
+          videos = html.xpath_nodes(%q(//*[@data-vid])).map do |node|
             node["data-vid"]
           end
 
-          if !recommended_videos.empty?
-            recommended_videos = recommended_videos.map { |channel| "('#{channel}', false)" }.join(",")
-            PG_DB.exec("INSERT INTO videos VALUES #{recommended_videos} ON CONFLICT (id) DO NOTHING")
+          if !videos.empty?
+            videos = videos.map { |video| "('#{video}', false)" }.join(",")
+            PG_DB.exec("INSERT INTO videos VALUES #{videos} ON CONFLICT (id) DO NOTHING")
           end
 
           uploader = html.xpath_node(%q(//*[@data-channel-external-id])).try &.["data-channel-external-id"]

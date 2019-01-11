@@ -53,7 +53,7 @@ loop do
       end
 
       videos = videos.map { |video| "('#{video}', false)" }.join(",")
-      PG_DB.exec("INSERT INTO videos VALUES #{videos} ON CONFLICT DO NOTHING")
+      PG_DB.exec("INSERT INTO videos VALUES #{videos} ON CONFLICT (id) DO NOTHING")
     rescue ex
     end
 

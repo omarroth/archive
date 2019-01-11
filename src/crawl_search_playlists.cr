@@ -92,7 +92,7 @@ loop do
     active_channel.send(playlists.size)
   end
 
-    print "Processed: #{i}\r"
+  print "Processed: #{i}\r"
 end
 
 def produce_playlist_url(id, index)
