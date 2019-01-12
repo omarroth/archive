@@ -5,6 +5,14 @@ const dnscache = require("dnscache")({
 	ttl: 600,
 	cachesize: 100
 });
+const http = require("http");
+
+let port = process.env.PORT || 3001;
+console.log("Will listen on "+port);
+http.createServer((req, res) => {
+	res.writeHead(200, {"Content-Type": "text/plain"});
+	res.end("It works!");
+}).listen(port);
 
 const configPath = "./config-crawler.json";
 const config = require(configPath);
