@@ -289,8 +289,8 @@ class Cache {
 	}
 }
 
-let idCache = new Cache(200000);
-let chanCache = new Cache(40000);
+let idCache = new Cache(config.idCacheSize);
+let chanCache = new Cache(config.channelCacheSize);
 
 let tries = 0;
 
@@ -313,21 +313,16 @@ function submitAndCrawl(data) {
 		}));
 	}
 
-	return (Promise.all([submit("channels", channels), submit("videos", videos)])
-		.then(([chan, vids]) => {
+	return Promise.all([submit("channels", channels), submit("videos", videos)]).then(([chan, vids]) => {
 		if (!videos.length) return;
-			console.log(
-				`Submitted ${videos.length}/${channels.length}, `+
-				`inserted ${vids.length}/${chan.length}`
-			);
-			let len = vids.length;
-			if (len < 100 && tries <= 10) {
-				console.log(`Crawling rest anyway! [${tries}/10]`);
-				return crawlers.videos(vids.concat(videos).slice(0, config.crawlLimit));
-			} else if (len) {
-				return crawlers.videos(vids.slice(0, config.crawlLimit));
-			}
-		}));
+		let len = vids.length;
+		if (len < config.crawlThreshold && tries <= 10) {
+			console.log(`Crawling rest anyway! [${tries}/10]`);
+			return crawlers.videos(vids.concat(videos).slice(0, config.crawlLimit));
+		} else if (len) {
+			return crawlers.videos(vids.slice(0, config.crawlLimit));
+		}
+	});
 }
 
 async function run() {
