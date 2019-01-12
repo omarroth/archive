@@ -79,6 +79,7 @@ class Batch
     finished:     Bool,
     content_size: Int32?,
     videos:       Array(String),
+    version:      Int32,
   })
 end
 
@@ -316,6 +317,8 @@ post "/api/commit" do |env|
     halt env, status_code: 403, response: response
   end
 
+  object = "#{batch.id}.json.gz"
+
   if batch.finished && batch.content_size
     if ((content_size - batch.content_size.not_nil!).to_f / batch.content_size.not_nil!.to_f).abs < CONTENT_THRESHOLD
       PG_DB.exec("UPDATE workers SET reputation = reputation + 1, current_batch = NULL, last_committed = $1 WHERE id = $2", Time.now, worker_id)
@@ -324,6 +327,11 @@ post "/api/commit" do |env|
         "upload_url" => "",
       }.to_json
       halt env, status_code: 200, response: response
+    elsif worker.reputation > 100
+      # Allow a trusted worker to upload a new version to S3
+
+      object = "#{batch.id}.json.gz-#{batch.version}"
+      PG_DB.exec("UPDATE batches SET content_size = $1, version = version + 1 WHERE id = $2", content_size, batch.id)
     else
       PG_DB.exec("UPDATE workers SET reputation = reputation - 10 WHERE id = $1", worker.id)
       PG_DB.exec("UPDATE workers SET disabled = true WHERE reputation < 0 AND id = $1", worker.id)
@@ -341,12 +349,12 @@ post "/api/commit" do |env|
     aws_access_key: ACCESS_KEY,
     aws_secret_key: SECRET_KEY,
     region: REGION,
-    object: "#{batch.id}.json.gz",
+    object: object,
     bucket: "",
     host_name: "#{BUCKET}.#{REGION}.#{SPACES_ENDPOINT}",
     additional_options: {
-      "Content-Type"         => "application/gzip",
-      "Content-Length-Range" => "#{(content_size - content_size * (CONTENT_THRESHOLD / 2)).to_i},#{(content_size + content_size * (CONTENT_THRESHOLD / 2)).to_i}",
+      "Content-Type"   => "application/gzip",
+      "Content-Length" => "#{content_size}",
     }
   )
   url = Awscr::S3::Presigned::Url.new(options).for(:put)
@@ -451,7 +459,7 @@ post "/api/channels/submit" do |env|
   channels.select! { |channel| channel.match(/UC[A-Za-z0-9_-]{22}/) }
 
   exists = PG_DB.query_all("SELECT ucid FROM channels WHERE ucid = ANY('{#{channels.join(",")}}')", as: String)
-  exists += PG_DB.query_all("SELECT id FROM user_channels WHERE id = ANY('{#{channels.join(",")}}')", as: String)
+  exists += PG_DB.query_all("SELECT ucid FROM user_channels WHERE ucid = ANY('{#{channels.join(",")}}')", as: String)
   channels -= exists
 
   if !channels.empty?

@@ -31,61 +31,60 @@ active_threads = 0
 active_channel = Channel(Bool).new
 i = 0
 
-PG_DB.exec("BEGIN")
-PG_DB.exec("DECLARE crawl_channel_ids CURSOR FOR SELECT ucid FROM channels WHERE finished = false OR joined IS NULL")
 loop do
-  PG_DB.query("FETCH 1000000 crawl_channel_ids") do |rs|
-    rs.each do
-      ucid = rs.read(String)
+  channels = PG_DB.query_all("SELECT ucid FROM channels WHERE finished = false", as: String)
+  channels.each do |ucid|
+    if active_threads >= max_threads
+      if active_channel.receive
+        active_threads -= 1
+        i += 1
+      end
+    end
 
-      if active_threads >= max_threads
-        if active_channel.receive
-          active_threads -= 1
-          i += 1
-        end
+    active_threads += 1
+    spawn do
+      client = HTTP::Client.new(YT_URL)
+
+      begin
+        response = client.get("/channel/#{ucid}/about?disable_polymer=1&gl=US&hl=en")
+        body = response.body
+        status_code = response.status_code
+      rescue ex
+        body ||= "<html></html>"
+        status_code ||= 500
       end
 
-      active_threads += 1
-      spawn do
-        client = HTTP::Client.new(YT_URL)
+      if status_code == 200
+        response = XML.parse_html(body)
 
-        begin
-          response = client.get("/channel/#{ucid}/about?disable_polymer=1&gl=US&hl=en")
-          body = response.body
-          status_code = response.status_code
-        rescue ex
-          body ||= "<html></html>"
-          status_code ||= 500
+        joined = response.xpath_node(%q(//span[starts-with(text(), "Joined ")]))
+        if joined
+          joined = Time.parse(joined.content.lchop("Joined "), "%b %-d, %Y", Time::Location.local)
+        end
+        joined ||= "2005-01-01"
+
+        related_channels = response.xpath_nodes(%q(//div[contains(@class, "branded-page-related-channels")]/ul/li))
+        related_channels = related_channels.map do |node|
+          node["data-external-id"]
+        end
+        related_channels ||= [] of String
+
+        if !related_channels.empty?
+          related_channels = related_channels.map { |channel| "('#{channel}', false)" }.join(",")
+          PG_DB.exec("INSERT INTO channels VALUES #{related_channels} ON CONFLICT DO NOTHING")
         end
 
-        if status_code == 200
-          response = XML.parse_html(body)
-
-          joined = response.xpath_node(%q(//span[starts-with(text(), "Joined ")]))
-          if joined
-            joined = Time.parse(joined.content.lchop("Joined "), "%b %-d, %Y", Time::Location.local)
-          end
-          joined ||= "2005-01-01"
-
-          related_channels = response.xpath_nodes(%q(//div[contains(@class, "branded-page-related-channels")]/ul/li))
-          related_channels = related_channels.map do |node|
-            node["data-external-id"]
-          end
-          related_channels ||= [] of String
-
-          if !related_channels.empty?
-            related_channels = related_channels.map { |channel| "('#{channel}', false)" }.join(",")
-            PG_DB.exec("INSERT INTO channels VALUES #{related_channels} ON CONFLICT DO NOTHING")
-          end
-
-          PG_DB.exec("UPDATE channels SET finished = true, joined = $2 WHERE ucid = $1", ucid, joined)
-        end
-        active_channel.send(true)
+        PG_DB.exec("UPDATE channels SET finished = true, joined = $2 WHERE ucid = $1", ucid, joined)
       end
-
-      print "Processed: #{i}\r"
+      active_channel.send(true)
     end
   end
+
+  if channels.size < 10
+    break
+  end
+
+  print "Processed: #{i}\r"
 end
 
 def pull_related_channels(ucid)

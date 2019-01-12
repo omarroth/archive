@@ -1,0 +1,8 @@
+{
+	"crawlLimit": 1000,
+	"invidious": "http://localhost:3000",
+	"invidiousGlobalConcurrentLimit": 10,
+	"master": "https://archive.omar.yt",
+	"processConcurrentLimit": 120,
+	"useInvidious": false
+}
