@@ -269,40 +269,71 @@ function selectBestMethod() {
 	});
 }
 
-function submitAndCrawl(data) {
-	let keys = Object.keys(data).filter(key => data[key] && data[key].length);
-	return Promise.all(
-		keys.map(k => {
-			if (data[k].length) {
-				let toSubmit = {};
-				toSubmit[k] = data[k].unique();
-				return untilItWorks(() => fetch(config.master+"/api/"+k+"/submit", {
-					method: "POST",
-					body: JSON.stringify(toSubmit),
-					headers: {
-						"Content-Type": "application/json"
-					}
-				}), false, 4000).then(res => res.json());
-			} else {
-				return Promise.resolve({inserted: [], def: true});
-			}
-		})
-	).then(results => {
-		let keyedResults = {};
-		for (let i = 0; i < keys.length; i++) {
-			keyedResults[keys[i]] = results[i];
+class Cache {
+	constructor(limit) {
+		this.limit = limit;
+		this.queue = [];
+		this.set = new Set();
+	}
+	seen(elem) {
+		if (this.set.has(elem)) return true;
+
+		this.set.add(elem);
+		this.queue.push(elem);
+
+		if (this.queue.length > this.limit) {
+			let rem = this.queue.shift();
+			this.set.delete(rem);
 		}
-		console.log(
-			`Submitted ${data.videos.length}/${data.channels.length}, `+
-			`inserted ${sp(keyedResults, "videos.inserted.length", 0)}/${sp(keyedResults, "channels.inserted.length", 0)}`
-		);
-		if (sp(keyedResults, "videos.inserted.length", 0)) return crawlers.videos(keyedResults.videos.inserted.slice(0, config.crawlLimit));
-	});
+		return false;
+	}
+}
+
+let idCache = new Cache(200000);
+let chanCache = new Cache(40000);
+
+let tries = 0;
+
+function submitAndCrawl(data) {
+	tries++;
+	if (!(data.videos && data.videos.length)) return;
+	let videos = data.videos.filter(id => !idCache.seen(id));
+	let channels = (data.channels || []).filter(c => !chanCache.seen(c));
+
+	function submit(target, data) {
+		if (!data.length) return Promise.resolve([]);
+		return (untilItWorks(() => fetch(config.master+"/api/"+target+"/submit", {
+			method: "POST",
+			body: JSON.stringify({ [target]: data }),
+			headers: {"Content-Type": "application/json"}
+		}), false, 4000).then(res => res.json()).then(results => {
+			let ins = results.inserted || [];
+			console.log(`Submitted ${target}: ${data.length}, inserted ${ins.length}`);
+			return ins;
+		}));
+	}
+
+	return (Promise.all([submit("channels", channels), submit("videos", videos)])
+		.then(([chan, vids]) => {
+		if (!videos.length) return;
+			console.log(
+				`Submitted ${videos.length}/${channels.length}, `+
+				`inserted ${vids.length}/${chan.length}`
+			);
+			let len = vids.length;
+			if (len < 100 && tries <= 10) {
+				console.log(`Crawling rest anyway! [${tries}/10]`);
+				return crawlers.videos(vids.concat(videos).slice(0, config.crawlLimit));
+			} else if (len) {
+				return crawlers.videos(vids.slice(0, config.crawlLimit));
+			}
+		}));
 }
 
 async function run() {
 	while (true) {
 		let data = await selectBestMethod();
+		tries = 0;
 		await submitAndCrawl(data);
 	}
 }
