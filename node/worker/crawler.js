@@ -41,7 +41,7 @@ function sp(object, path, def) {
 }
 
 Array.prototype.unique = function() {
-	return this.filter((item, index, array) => !array.slice(0, index).includes(item));
+	return Array.from(new Set(this));
 }
 
 class LockManager {
@@ -204,7 +204,7 @@ const crawlers = {
 			return data;
 		});
 		else promise = new Promise(resolve => {
-			let data = {videos: [], channels: []};
+			let data = {videos: new Set(), channels: new Set()};
 			let ongoing = 0;
 			while (ongoing < config.processConcurrentLimit && ids.length) {
 				ongoing++;
@@ -218,7 +218,7 @@ const crawlers = {
 				} else {
 					if (!--ongoing) {
 						if (config.progressBarMethod) writeProgress(true);
-						resolve(data);
+						resolve({videos: [...data.videos], channels: [...data.channels]});
 					}
 				}
 			}
@@ -227,12 +227,13 @@ const crawlers = {
 					url: `https://www.youtube.com/watch?v=${ids.shift()}&disable_polymer=1`,
 					forever: true
 				})).then(body => {
-					body.replace(/\/watch\?v=([\w-]{11}).*thumb-link/g, (string, extract) => {
-						data.videos.push(Buffer.from(extract).toString()); // https://github.com/nodejs/help/issues/711
-					});
-					body.replace(/\/channel\/([\w-]{24})/g, (string, extract) => {
-						data.channels.push(Buffer.from(extract).toString()); // https://github.com/nodejs/help/issues/711
-					});
+					let match;
+					let vid_re = /(?:\bv=|youtu\.be\/)([\w-]{11})(?!\w)/g;
+					while (match = vid_re.exec(body))
+						data.videos.add(Buffer.from(match[1]).toString()); // https://github.com/nodejs/help/issues/711
+					let chan_re = /\b(UC[\w-]{22})(?!\w)/g;
+					while (match = chan_re.exec(body))
+						data.channels.add(Buffer.from(match[1]).toString()); // https://github.com/nodejs/help/issues/711
 					callback();
 				});
 			}
