@@ -7,5 +7,7 @@
 	"invidiousGlobalConcurrentLimit": 10,
 	"master": "https://archive.omar.yt",
 	"processConcurrentLimit": 120,
+	"progressBarMethod": 2,
+	"progressFrequency": 100,
 	"useInvidious": false
 }

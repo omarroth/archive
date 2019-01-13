@@ -154,10 +154,11 @@ const crawlers = {
 		let progress = 0;
 		let max = ids.length;
 		function writeProgress(done) {
-			process.stdout.write("\r"+progressBar(progress, max, 50));
+			if (config.progressBarMethod == 1) console.log(progressBar(progress, max, 50));
+			if (config.progressBarMethod == 2) process.stdout.write("\r"+progressBar(progress, max, 50));
 			if (done) process.stdout.write("\n");
 		}
-		writeProgress();
+		if (config.progressBarMethod) writeProgress();
 		let promise;
 		if (config.useInvidious) promise = Promise.all(
 			ids.map(async id => {
@@ -180,11 +181,11 @@ const crawlers = {
 				}), true);
 				invidiousLocker.unlock();
 				progress++;
-				writeProgress();
+				if (config.progressBarMethod && (progress % config.progressFrequency == 0)) writeProgress();
 				return result;
 			})
 		).then(results => {
-			writeProgress(true);
+			if (config.progressBarMethod) writeProgress(true);
 			let data = {videos: [], channels: []};
 			for (let result of results) {
 				if (result) {
@@ -203,12 +204,12 @@ const crawlers = {
 			}
 			function callback() {
 				progress++;
-				writeProgress();
+				if (config.progressBarMethod && (progress % config.progressFrequency == 0)) writeProgress();
 				if (ids.length) {
 					startNew();
 				} else {
 					if (!--ongoing) {
-						writeProgress(true);
+						if (config.progressBarMethod) writeProgress(true);
 						resolve(data);
 					}
 				}
