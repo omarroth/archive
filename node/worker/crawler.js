@@ -5,6 +5,7 @@ const dnscache = require("dnscache")({
 	ttl: 600,
 	cachesize: 100
 });
+const Deque = require("double-ended-queue");
 
 const configPath = "./config-crawler.json";
 const config = require(configPath);
@@ -32,9 +33,11 @@ function sp(object, path, def) {
 	return object;
 }
 
-Array.prototype.unique = function() {
-	return Array.from(new Set(this));
+// https://github.com/nodejs/help/issues/711
+let flatstr = function flatstr(s) {
+	return (" " + s).slice(1);
 }
+
 
 class LockManager {
 	constructor(limit, debug) {
@@ -219,13 +222,10 @@ const crawlers = {
 					url: `https://www.youtube.com/watch?v=${ids.shift()}&disable_polymer=1`,
 					forever: true
 				})).then(body => {
-					let match;
-					let vid_re = /(?:\bv=|youtu\.be\/)([\w-]{11})(?!\w)/g;
-					while (match = vid_re.exec(body))
-						data.videos.add(Buffer.from(match[1]).toString()); // https://github.com/nodejs/help/issues/711
-					let chan_re = /\b(UC[\w-]{22})(?!\w)/g;
-					while (match = chan_re.exec(body))
-						data.channels.add(Buffer.from(match[1]).toString()); // https://github.com/nodejs/help/issues/711
+					for (let match of body.match(/(?:\bv=|youtu\.be\/)([\w-]{11})(?!\w)/g) || [])
+						data.videos.add(flatstr(match.slice(-11)));
+					for (let match of body.match(/\b(UC[\w-]{22})(?!\w)/g) || [])
+						data.channels.add(flatstr(match));
 					callback();
 				});
 			}
@@ -274,7 +274,7 @@ function selectBestMethod() {
 class Cache {
 	constructor(limit) {
 		this.limit = limit;
-		this.queue = [];
+		this.queue = new Deque(limit + 1);
 		this.set = new Set();
 	}
 	seen(elem) {
