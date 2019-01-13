@@ -10,6 +10,8 @@ Annotations on every YouTube video will be deleted forever on the 15th of Januar
 
 The current process is to scrape as many channel IDs as possible, then to scrape video IDs from those channels, then to download annotation data for those videos.
 
+If you would like to make sure specific channels are archived before the 15th, you can use [this tool](https://cadence.moe/misc/archivesubmit).
+
 ## Usage
 
 ### Installing and running a worker (Node.js):
