@@ -1,8 +1,20 @@
+## Running the project
+
+1. Install node.js
+1. `git clone https://github.com/omarroth/archive`
+1. `cd archive/node/worker`
+1. `npm install`
+
+To run a worker server, `node index.js`
+To run a crawler, `node crawler.js`
+
+You can also do this easily on Heroku: just point it at either the "heroku" branch for a worker or the "heroku-crawler" branch for the crawler. Don't forget to periodically send HTTP requests to the Heroku server to keep it alive.
+
+You can also do this easily on Docker: see README.md in the root of this repo for details.
+
+If you need help, either ask in [the Discord server](https://discord.gg/dP4Pu6d) or [contact me personally](https://cadence.moe/about/contact).
+
 ## About this folder
-
-*by cloudrac3r*
-
----
 
 Part of the YouTube annotations archival project.
 
@@ -14,67 +26,41 @@ Having one machine download data about millions of channels and hundreds of mill
 
 What I'm working on is a distributed system: one master server ("master") hands out work to be done, and worker servers ("workers") perform the work and return it to master. Only master has a copy of the database.
 
-The entire system operates on an HTTP API, so it's possible to write custom versions of the worker servers, either for completeness or more performance compared to the worker code provided here.
-
----
+The entire system operates on an HTTP API, so it's possible to write custom versions of the worker servers if you think you can get more performance compared to the worker code provided here.
 
 ## Current state of code
 
-Everything is complete to the bare minimum. Both the master and the worker are functional, but require observation in case error arise.
+The worker is functional and is the recommended way of downloading annotations. The node.js port of the master server is abandoned, since there is already a functional master server written in Crystal.
 
-## Final goal
-
-A single hosted master server that knows about every channel ID with enough storage capacity to store hundreds of millions of blobs of annotation data, that can be left alone for extended periods of time without dying.
-
-Many worker servers run by people with lots of bandwidth communicating with that master server.
-
-## To do
-
-- Lots and lots more error checking
-- Master server optimisation
-- Dynamic load balancing for workers
-- Descriptive config parameter names
-- Lots of testing (not too much, we don't have time)
-- Customisable logging
-- Migrate to Postgres
-- Pipe in omarroth's completed channel list
-- Host the master server somewhere
-- Spread the word about the project and ask people to run the worker server
-
----
-
-## Running
-
-1. Install node.js
-1. `git clone`
-1. `cd repo/node`
-1. `npm install`
-
-`cd` to the folder containing the script before executing it.
-
-If running the master server, don't forget to run `setup.js` (just once) to build the database.
-
-If running the worker server:
-
-- make sure you're running a master server for it to connect to
-- if possible, run your own [Invidious](https://github.com/omarroth/invidious) server for faster responses and decreased load (contact omarroth for instructions)
-- edit `config.json` to point to the correct master and Invidious servers
-
----
+[Check here to see the archive progress.](https://archive.omar.yt/api/stats)
 
 ## Contributing
 
-You don't *have* to do this, but before you write any code, *please* [contact me](https://cadence.moe/about/contact) so we can talk about what you want to do and how you want to do it. Time is precious — let's not waste it on duplicate or unnecessary work!
+Before you write any code, please [contact me](https://cadence.moe/about/contact) so we can talk about what you want to do and how you want to do it. Time is precious — let's not waste it on duplicate or unnecessary work!
 
 Once that's sorted out, fork this repo, write your code, open a pull request, the usual.
 
----
-
 ## Files overview
+
+## `/worker`
+
+Code for the worker server.
+
+`/index.js`
+Sole file controlling the worker script. Intialises a worker and starts downloading video annotations according to the master server's directions.
+
+`/config.json`
+Easily editable config parameters. Check the code to find out what they do. Similarly named parameters may not do the same thing!
+
+`/crawler.js`
+Crawles extra channels and videos and submits their IDs to the master server. The master server will then process the IDs, put them into batches, and hand them out to workers.
+
+`/config-crawler.json`
+Configuration parameters for the crawler. Check the code to find out what they do.
 
 ## `/master`
 
-Code for the master server.
+Remember: this node.js port of the master server is incomplete and abandoned. Don't use it.
 
 `/setup.js`
 Erase and initialise `/db/main.db` for use by the master server. More specifically, create the schema from `/db/schema.sql`, then unzip `/db/channels.json.gz` (a list of 100k channels) and import it into Channels. This is never invoked automatically — run it manually whenever you need a fresh database file.
@@ -90,13 +76,3 @@ Database related files. You shouldn't need to edit anything here manually, but f
 
 `/api`
 API endpoints. Each file in here is named according to what it manages.
-
-## `/worker`
-
-Code for the worker server.
-
-`/config.json`
-Easily editable config parameters. Check the code to find out what they do. Similarly named parameters may not do the same thing!
-
-`/index.js`
-Sole file controlling the worker script. Intialises a worker and starts downloading channels and videos according to the master server's directions.
