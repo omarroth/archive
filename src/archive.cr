@@ -458,6 +458,38 @@ post "/api/videos/submit" do |env|
   halt env, status_code: 200, response: body
 end
 
+options "/api/playlists/submit" do |env|
+  env.response.headers["Access-Control-Allow-Origin"] = "*"
+  env.response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+  env.response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+end
+
+post "/api/playlists/submit" do |env|
+  env.response.headers["Access-Control-Allow-Origin"] = "*"
+  env.response.content_type = "application/json"
+
+  playlists = env.params.json["playlists"].as(Array(JSON::Any))
+  playlists = playlists.map { |playlist| playlist.as_s }
+  # playlists.select! { |playlist| playlist.match(/UC[A-Za-z0-9_-]{22}/) }
+  playlists.uniq!
+
+  exists = PG_DB.query_all("SELECT plid FROM playlists WHERE plid = ANY('{#{playlists.join(",")}}')", as: String)
+  exists += PG_DB.query_all("SELECT plid FROM user_playlists WHERE plid = ANY('{#{playlists.join(",")}}')", as: String)
+  playlists -= exists
+
+  if !playlists.empty?
+    args = [] of String
+    playlists.each_with_index { |playlist, i| args << "($#{i + 1})" }
+    PG_DB.exec("INSERT INTO user_playlists VALUES #{args.join(",")} ON CONFLICT DO NOTHING", playlists)
+  end
+
+  body = {
+    "inserted" => playlists,
+  }.to_json
+
+  halt env, status_code: 200, response: body
+end
+
 options "/api/channels/submit" do |env|
   env.response.headers["Access-Control-Allow-Origin"] = "*"
   env.response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
