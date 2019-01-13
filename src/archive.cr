@@ -427,7 +427,14 @@ post "/api/finalize" do |env|
   halt env, status_code: 204, response: ""
 end
 
+options "/api/videos/submit" do |env|
+  env.response.headers["Access-Control-Allow-Origin"] = "*"
+  env.response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+  env.response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+end
+
 post "/api/videos/submit" do |env|
+  env.response.headers["Access-Control-Allow-Origin"] = "*"
   env.response.content_type = "application/json"
 
   videos = env.params.json["videos"].as(Array(JSON::Any))
@@ -451,7 +458,14 @@ post "/api/videos/submit" do |env|
   halt env, status_code: 200, response: body
 end
 
+options "/api/channels/submit" do |env|
+  env.response.headers["Access-Control-Allow-Origin"] = "*"
+  env.response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+  env.response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+end
+
 post "/api/channels/submit" do |env|
+  env.response.headers["Access-Control-Allow-Origin"] = "*"
   env.response.content_type = "application/json"
 
   channels = env.params.json["channels"].as(Array(JSON::Any))
