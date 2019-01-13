@@ -219,12 +219,13 @@ const crawlers = {
 					url: `https://www.youtube.com/watch?v=${ids.shift()}&disable_polymer=1`,
 					forever: true
 				})).then(body => {
-					body.replace(/(?:\bv=|youtu\.be\/)([\w-]{11})(?!\w)/g, (string, extract) => {
-						data.videos.add(Buffer.from(extract).toString()); // https://github.com/nodejs/help/issues/711
-					});
-					body.replace(/\b(UC[\w-]{22})(?!\w)/g, (string, extract) => {
-						data.channels.add(Buffer.from(extract).toString()); // https://github.com/nodejs/help/issues/711
-					});
+					let match;
+					let vid_re = /(?:\bv=|youtu\.be\/)([\w-]{11})(?!\w)/g;
+					while (match = vid_re.exec(body))
+						data.videos.add(Buffer.from(match[1]).toString()); // https://github.com/nodejs/help/issues/711
+					let chan_re = /\b(UC[\w-]{22})(?!\w)/g;
+					while (match = chan_re.exec(body))
+						data.channels.add(Buffer.from(match[1]).toString()); // https://github.com/nodejs/help/issues/711
 					callback();
 				});
 			}
