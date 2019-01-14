@@ -85,7 +85,11 @@ function delay(time) {
 	return new Promise(resolve => setTimeout(() => resolve(), time));
 }
 
-async function untilItWorks(code, silence, timeout = 1000, maxTimeout = 5000, maxRetries = 0) {
+async function untilItWorks(code, options = {}) {
+	let maxRetries = options.maxRetries;
+	let timeout = options.timeout || 1000;
+	let maxTimeout = options.maxTimeout || 5000;
+
 	let tries = 0;
 	while (true) {
 		tries++;
@@ -93,7 +97,7 @@ async function untilItWorks(code, silence, timeout = 1000, maxTimeout = 5000, ma
 			return await code();
 		} catch (err) {
 			if (maxRetries && tries > maxRetries) throw err;
-			if (!silence) {
+			if (!options.silent) {
 				console.log("Something didn't work, but hopefully will next time. [Attempt " + tries + "]");
 				console.log(err);
 			}
@@ -200,7 +204,7 @@ function doCrawl(data) {
 						resolve(undefined);
 					}
 				});
-			}), true);
+			}), { silent: true });
 			invidiousLocker.unlock();
 			progress++;
 			if (config.progressBarMethod && (progress % config.progressFrequency == 0)) writeProgress();
@@ -276,7 +280,7 @@ function doCrawl(data) {
 				url: url,
 				forever: true,
 				json: json
-			}), true, 1000, 5000, 10).then(processBody).catch(callback);
+			}), { silent: true, maxRetries: 10 }).then(processBody).catch(callback);
 		}
 	});
 	return promise.then(data => {
@@ -370,7 +374,7 @@ function submitAndCrawl(data) {
 				let ins = results.inserted || [];
 				console.log(`[${++completedChunks}/${chunks.length}] Submitted ${target}: ${chunk.length}, inserted ${ins.length}`);
 				return ins;
-			}), false, 2000, 60000)
+			}), { timeout: 2000, maxTimeout: 60000 })
 		)).then(results => results.reduce((acc, v) => acc.concat(v), []));
 	}
 
