@@ -18,6 +18,8 @@
   "homepage": "https://github.com/cloudrac3r/youtube-annotations-archive#readme",
   "dependencies": {
     "aws4": "^1.8.0",
+    "dnscache": "github:cloudrac3r/dnscache",
+    "double-ended-queue": "^2.1.0-0",
     "fast-xml-parser": "^3.12.10",
     "mime": "^2.4.0",
     "node-fetch": "^2.3.0",
