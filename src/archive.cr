@@ -151,7 +151,7 @@ post "/api/workers/create" do |env|
   remote_address = env.as(HTTP::Server::NewContext).remote_address.address
   worker_count = PG_DB.query_one("SELECT count(*) FROM workers WHERE ip = $1", remote_address, as: Int64)
 
-  if worker_count > 100
+  if worker_count > 1000
     response = {
       "error"      => "Too many workers for IP",
       "error_code" => 1,
@@ -427,7 +427,14 @@ post "/api/finalize" do |env|
   halt env, status_code: 204, response: ""
 end
 
+options "/api/videos/submit" do |env|
+  env.response.headers["Access-Control-Allow-Origin"] = "*"
+  env.response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+  env.response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+end
+
 post "/api/videos/submit" do |env|
+  env.response.headers["Access-Control-Allow-Origin"] = "*"
   env.response.content_type = "application/json"
 
   videos = env.params.json["videos"].as(Array(JSON::Any))
@@ -451,7 +458,46 @@ post "/api/videos/submit" do |env|
   halt env, status_code: 200, response: body
 end
 
+options "/api/playlists/submit" do |env|
+  env.response.headers["Access-Control-Allow-Origin"] = "*"
+  env.response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+  env.response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+end
+
+post "/api/playlists/submit" do |env|
+  env.response.headers["Access-Control-Allow-Origin"] = "*"
+  env.response.content_type = "application/json"
+
+  playlists = env.params.json["playlists"].as(Array(JSON::Any))
+  playlists = playlists.map { |playlist| playlist.as_s }
+  # playlists.select! { |playlist| playlist.match(/UC[A-Za-z0-9_-]{22}/) }
+  playlists.uniq!
+
+  exists = PG_DB.query_all("SELECT plid FROM playlists WHERE plid = ANY('{#{playlists.join(",")}}')", as: String)
+  exists += PG_DB.query_all("SELECT plid FROM user_playlists WHERE plid = ANY('{#{playlists.join(",")}}')", as: String)
+  playlists -= exists
+
+  if !playlists.empty?
+    args = [] of String
+    playlists.each_with_index { |playlist, i| args << "($#{i + 1})" }
+    PG_DB.exec("INSERT INTO user_playlists VALUES #{args.join(",")} ON CONFLICT DO NOTHING", playlists)
+  end
+
+  body = {
+    "inserted" => playlists,
+  }.to_json
+
+  halt env, status_code: 200, response: body
+end
+
+options "/api/channels/submit" do |env|
+  env.response.headers["Access-Control-Allow-Origin"] = "*"
+  env.response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+  env.response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+end
+
 post "/api/channels/submit" do |env|
+  env.response.headers["Access-Control-Allow-Origin"] = "*"
   env.response.content_type = "application/json"
 
   channels = env.params.json["channels"].as(Array(JSON::Any))

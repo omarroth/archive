@@ -203,7 +203,7 @@ class BatchProcess {
 				if (abortOnLock && dbLockManager.locked) return;
 				await dbLockManager.promise();
 				await this.worker.db.run("BEGIN TRANSACTION");
-				await Promise.all(cacheBuffer.map(id => this.worker.db.run("INSERT INTO Cache VALUES (?, ?)", [id, results[id]])));
+				await Promise.all(cacheBuffer.map(id => this.worker.db.run("INSERT OR IGNORE INTO Cache VALUES (?, ?)", [id, results[id]])));
 				await this.worker.db.run("END TRANSACTION");
 				cacheBuffer = [];
 				dbLockManager.unlock();
