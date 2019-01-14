@@ -81,16 +81,26 @@ class LockManager {
 }
 let invidiousLocker = new LockManager(config.invidiousGlobalConcurrentLimit);
 
-function untilItWorks(code, silence, timeout = 1000) {
-	return new Promise(resolve => {
-		code().then(resolve).catch(err => {
+function delay(time) {
+	return new Promise(resolve => setTimeout(() => resolve(), time));
+}
+
+async function untilItWorks(code, silence, timeout = 1000, maxTimeout = 5000, maxRetries = 0) {
+	let tries = 0;
+	while (true) {
+		tries++;
+		try {
+			return await code();
+		} catch (err) {
+			if (maxRetries && tries > maxRetries) throw err;
 			if (!silence) {
-				console.log("Something didn't work, but hopefully will next time.");
+				console.log("Something didn't work, but hopefully will next time. [Attempt " + tries + "]");
 				console.log(err);
 			}
-			setTimeout(() => resolve(untilItWorks(code)), timeout);
-		});
-	});
+			await delay((Math.random() * 0.4 + 0.6) * timeout);
+			timeout = Math.min(maxTimeout, timeout * 1.3);
+		}
+	}
 }
 
 const methods = [
@@ -266,7 +276,7 @@ function doCrawl(data) {
 				url: url,
 				forever: true,
 				json: json
-			})).then(processBody);
+			}), true, 1000, 5000, 10).then(processBody).catch(callback);
 		}
 	});
 	return promise.then(data => {
@@ -353,11 +363,14 @@ function submitAndCrawl(data) {
 				method: "POST",
 				body: JSON.stringify({ [target]: chunk }),
 				headers: {"Content-Type": "application/json"}
-			}), false, 4000).then(res => res.json()).then(results => {
+			}).then(res => res.json()).then(results => {
+				if (!results.inserted) {
+					return Promise.reject("Bad submit result: " + JSON.stringify(results));
+				}
 				let ins = results.inserted || [];
 				console.log(`[${++completedChunks}/${chunks.length}] Submitted ${target}: ${chunk.length}, inserted ${ins.length}`);
 				return ins;
-			})
+			}), false, 2000, 60000)
 		)).then(results => results.reduce((acc, v) => acc.concat(v), []));
 	}
 
