@@ -89,16 +89,30 @@ class LockManager {
 }
 let invidiousLocker = new LockManager(config.invidiousGlobalConcurrentLimit);
 
-function untilItWorks(code, silence, timeout = 1000) {
-	return new Promise(resolve => {
-		code().then(resolve).catch(err => {
-			if (!silence) {
-				console.log("Something didn't work, but hopefully will next time.");
+function delay(time) {
+	return new Promise(resolve => setTimeout(() => resolve(), time));
+}
+
+async function untilItWorks(code, options = {}) {
+	let maxRetries = options.maxRetries;
+	let timeout = options.timeout || 1000;
+	let maxTimeout = options.maxTimeout || 5000;
+
+	let tries = 0;
+	while (true) {
+		tries++;
+		try {
+			return await code();
+		} catch (err) {
+			if (maxRetries && tries > maxRetries) throw err;
+			if (!options.silent) {
+				console.log("Something didn't work, but hopefully will next time. [Attempt " + tries + "]");
 				console.log(err);
 			}
-			setTimeout(() => resolve(untilItWorks(code)), timeout);
-		});
-	});
+			await delay((Math.random() * 0.4 + 0.6) * timeout);
+			timeout = Math.min(maxTimeout, timeout * 1.3);
+		}
+	}
 }
 
 const methods = [
@@ -198,7 +212,7 @@ function doCrawl(data) {
 						resolve(undefined);
 					}
 				});
-			}), true);
+			}), { silent: true });
 			invidiousLocker.unlock();
 			progress++;
 			if (config.progressBarMethod && (progress % config.progressFrequency == 0)) writeProgress();
@@ -274,7 +288,7 @@ function doCrawl(data) {
 				url: url,
 				forever: true,
 				json: json
-			})).then(processBody);
+			}), { silent: true, maxRetries: 10 }).then(processBody).catch(callback);
 		}
 	});
 	return promise.then(data => {
@@ -361,11 +375,14 @@ function submitAndCrawl(data) {
 				method: "POST",
 				body: JSON.stringify({ [target]: chunk }),
 				headers: {"Content-Type": "application/json"}
-			}), false, 4000).then(res => res.json()).then(results => {
+			}).then(res => res.json()).then(results => {
+				if (!results.inserted) {
+					return Promise.reject("Bad submit result: " + JSON.stringify(results));
+				}
 				let ins = results.inserted || [];
 				console.log(`[${++completedChunks}/${chunks.length}] Submitted ${target}: ${chunk.length}, inserted ${ins.length}`);
 				return ins;
-			})
+			}), { timeout: 2000, maxTimeout: 60000 })
 		)).then(results => results.reduce((acc, v) => acc.concat(v), []));
 	}
 
@@ -383,7 +400,8 @@ function submitAndCrawl(data) {
 		crawlVids = crawlVids.slice(0, Math.floor(config.crawlLimit * 0.6));
 		crawlChans = crawlChans.slice(0, Math.floor(config.crawlLimit * 0.25));
 		crawlLists = crawlLists.slice(0, Math.floor(config.crawlLimit * 0.15));
-		return doCrawl({videos: crawlVids, channels: crawlChans, playlists: crawlLists});
+		if (crawlVids.length + crawlChans.length + crawlLists.length > 0)
+			return doCrawl({videos: crawlVids, channels: crawlChans, playlists: crawlLists});
 	});
 }
 

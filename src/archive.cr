@@ -151,7 +151,7 @@ post "/api/workers/create" do |env|
   remote_address = env.as(HTTP::Server::NewContext).remote_address.address
   worker_count = PG_DB.query_one("SELECT count(*) FROM workers WHERE ip = $1", remote_address, as: Int64)
 
-  if worker_count > 100
+  if worker_count > 1000
     response = {
       "error"      => "Too many workers for IP",
       "error_code" => 1,
