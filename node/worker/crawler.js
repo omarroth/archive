@@ -161,8 +161,8 @@ const methods = [
 function doCrawl(data) {
 	let work = [];
 	data.videos.forEach(id => work.push({type: "video", id: id}));
-	data.channels.forEach(id => work.push({type: "channel", id: id}));
 	data.playlists.forEach(id => work.push({type: "playlist", id: id}));
+	data.channels.forEach(id => work.push({type: "channel", id: id}));
 	if (!work.length) throw new Error("Video crawler was given nothing to crawl");
 	console.log("Crawling "+work.length+" ids for recommendations");
 	let progress = 0;
@@ -174,6 +174,7 @@ function doCrawl(data) {
 		if (done) process.stdout.write("\n");
 	}
 	function enqueue(url, type = "continuation") {
+		if (extraWork >= Math.max(max, 100)) return; // Hard cap to avoid blowing up crawling with continuations.
 		work.push({type: type, id: url});
 		extraWork++;
 	}
@@ -234,18 +235,24 @@ function doCrawl(data) {
 			}
 		}
 		function processBody(body) {
+			if (typeof body === "object") {
+				body = Object.values(body).join(" ");
+			}
 			for (let match of body.match(/(?:\bv=|youtu\.be\/)([\w-]{11})(?!\w)/g) || [])
 				data.videos.add(flatstr(match.slice(-11)));
 			for (let match of body.match(/\b(UC[\w-]{22})(?!\w)/g) || [])
 				data.channels.add(flatstr(match));
 			for (let match of body.match(/\b(PL(?:[0-9A-F]{16}|[\w-]{32})|LL[\w-]{22})(?!\w)/) || [])
 				data.playlists.add(flatstr(match));
-			let cont = body.match(/"(\/browse_ajax?[^"]*)"/);
-			if (cont != null) enqueue(flatstr(cont[1].replace(/&amp;/g, "&")));
+			if (work.length && work[0].type !== "continuation") {
+				let cont = body.match(/"(\/browse_ajax?[^"]*)"/);
+				if (cont != null) enqueue(flatstr(cont[1].replace(/&amp;/g, "&")), "continuation");
+			}
 			callback();
 		}
 		function startNew() {
 			let {type, id} = work.pop();
+			let json = false;
 			let url;
 			switch (type) {
 			case "video":
@@ -260,11 +267,13 @@ function doCrawl(data) {
 				break;
 			case "continuation":
 				url = "https://www.youtube.com" + id;
+				json = true;
 				break;
 			}
 			untilItWorks(() => rp({
 				url: url,
-				forever: true
+				forever: true,
+				json: json
 			})).then(processBody);
 		}
 	});
