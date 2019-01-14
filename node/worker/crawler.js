@@ -334,16 +334,19 @@ function submitAndCrawl(data) {
 	let playlists = (data.playlists || []).filter(p => !listCache.seen(p));
 
 	function submit(target, data) {
-		if (!data.length) return Promise.resolve([]);
-		return (untilItWorks(() => fetch(config.master+"/api/"+target+"/submit", {
+		let chunks = [];
+		for (var i = 0; i < data.length; i += 25000) {
+			chunks.push(data.slice(i, i + 25000));
+		}
+		return Promise.all(chunks.map(chunk => untilItWorks(() => fetch(config.master+"/api/"+target+"/submit", {
 			method: "POST",
-			body: JSON.stringify({ [target]: data }),
+			body: JSON.stringify({ [target]: chunk }),
 			headers: {"Content-Type": "application/json"}
 		}), false, 4000).then(res => res.json()).then(results => {
 			let ins = results.inserted || [];
 			console.log(`Submitted ${target}: ${data.length}, inserted ${ins.length}`);
 			return ins;
-		}));
+		}))).then(results => results.reduce((acc, v) => acc.concat(v), []));
 	}
 
 	return Promise.all([submit("channels", channels), submit("videos", videos), submit("playlists", playlists)]).then(([chan, vids, lists]) => {
