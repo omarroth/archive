@@ -24,6 +24,32 @@ function progressBar(progress, max, length) {
 	return progress.toString().padStart(max.toString().length, " ")+"/"+max+" ["+"=".repeat(bars)+" ".repeat(length-bars)+"]";
 }
 
+async function untilItWorks(code, options = {}) {
+	let maxRetries = options.maxRetries;
+	let timeout = options.timeout || 1000;
+	let maxTimeout = options.maxTimeout || 5000;
+
+	let tries = 0;
+	while (true) {
+		tries++;
+		try {
+			return await code();
+		} catch (err) {
+			if (maxRetries && tries > maxRetries) throw err;
+			if (!options.silent) {
+				console.log("Something didn't work, but hopefully will next time. [Attempt " + tries + "]");
+				console.log(err);
+			}
+			await delay((Math.random() * 0.4 + 0.6) * timeout);
+			timeout = Math.min(maxTimeout, timeout * 1.3);
+		}
+	}
+}
+
+function delay(time) {
+	return new Promise(resolve => setTimeout(() => resolve(), time));
+}
+
 class LockManager {
 	constructor(debug) {
 		this.debug = debug;
@@ -126,7 +152,7 @@ class Worker {
 			so.object.body = JSON.stringify(so.object.body);
 			so.addHeaders({"Content-Type": "application/json"});
 		}
-		return fetch(so.object.url, so.object)
+		return untilItWorks(() => fetch(so.object.url, so.object), {timeout: 3000, maxTimeout: 10000})
 		.then(res => {
 			if (res.status == 204) return Promise.resolve("");
 			else return res.json();
