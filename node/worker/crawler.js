@@ -375,7 +375,8 @@ function submitAndCrawl(data) {
 		crawlVids = crawlVids.slice(0, Math.floor(config.crawlLimit * 0.6));
 		crawlChans = crawlChans.slice(0, Math.floor(config.crawlLimit * 0.25));
 		crawlLists = crawlLists.slice(0, Math.floor(config.crawlLimit * 0.15));
-		return doCrawl({videos: crawlVids, channels: crawlChans, playlists: crawlLists});
+		if (crawlVids.length + crawlChans.length + crawlLists.length > 0)
+			return doCrawl({videos: crawlVids, channels: crawlChans, playlists: crawlLists});
 	});
 }
 
