@@ -44,9 +44,9 @@ function delay(time) {
 
 function spacesUpload(url, data, lastDelay = 0) {
 	return rp({
-		url: commitResponse.upload_url,
+		url: url,
 		method: "PUT",
-		body: gzipData,
+		body: data,
 		headers: {
 			"Content-Type": "application/gzip"
 		}
