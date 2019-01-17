@@ -1,3 +1,7 @@
+YouTube annotations were removed around 15:00 UTC on January 15th, 2019. The tracker was taken down around a day later, so workers are no longer required, and the URL they connect to will no longer work. See [here](https://www.reddit.com/r/DataHoarder/comments/aa6czg/youtube_annotation_archive/) for more information about the future of this project.
+
+---
+
 **For cloudrac3r's work, see [README.md](https://github.com/omarroth/archive/blob/master/node/README.md) in the `node` folder.**
 
 ---
