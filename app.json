@@ -3,5 +3,10 @@
   "description": "YouTube Archiver",
   "repository": "https://github.com/omarroth/archive",
   "logo": "https://invidio.us/apple-touch-icon.png",
-  "keywords": ["YouTube", "Archive", "Data"]
+  "keywords": ["YouTube", "Archive", "Data"],
+  "buildpacks": [
+    {
+      "url": "https://github.com/heroku/heroku-buildpack-nodejs"
+    }
+  ],
 }
