@@ -1,2 +1,2 @@
-web: npm install
-web: npm start
+worker: npm install
+worker: npm start
