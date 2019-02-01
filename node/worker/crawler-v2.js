@@ -10,8 +10,6 @@ const Deque = require("double-ended-queue");
 const configPath = "./config-crawler.json";
 const config = require(configPath);
 
-const invidious = config.invidious;
-
 // generates a random number in range [min, max)
 // that is, including min, and excluding max
 function randint(min, max) {
@@ -74,6 +72,17 @@ let flatstr = function flatstr(s) {
 	return (" " + s).slice(1);
 }
 
+/*
+let flatstr = function flatstr(s) {
+	Number(s);
+	return s;
+
+try {
+	flatstr = Function("s", "return typeof s === \"string\" ? %FlattenString(s) : s");
+} catch (e) {
+	console.log("Native function call syntax unavailable, using Number(s) for string flattening");
+}
+*/ // XXX: ALL OF THIS LEAKS MEMORY WTF
 
 class LockManager {
 	constructor(limit, debug) {
@@ -115,7 +124,6 @@ class LockManager {
 		return new Promise(resolve => this.waitForUnlock(resolve));
 	}
 }
-let invidiousLocker = new LockManager(config.invidiousGlobalConcurrentLimit);
 
 function delay(time) {
 	return new Promise(resolve => setTimeout(() => resolve(), time));
@@ -157,30 +165,6 @@ const methods = [
 			return data;
 		}
 	},{
-		name: "Random word",
-		blacklisted: false,
-		code: async () => {
-			if (!config.useInvidious) throw "Invidious is disabled, cannot search YouTube.";
-			let data = {channels: [], videos: [], playlists: []};
-			let words = await rp({
-				url: "https://random-word.ryanrk.com/api/en/word/random",
-				json: true
-			});
-			let sort = ["relevance", "rating", "upload_date", "view_count"].random();
-			await invidiousLocker.promise();
-			let results = await rp({
-				url: invidious+"/api/v1/search?q="+words[0]+"&sort_by="+sort,
-				json: true
-			});
-			invidiousLocker.unlock();
-			for (let result of results) {
-				data.videos.push(result.videoId);
-				data.channels.push(result.authorId);
-			}
-			log("Search gave "+data.videos.length+" results");
-			return data;
-		}
-	},{
 		name: "HookTube random",
 		blacklisted: false,
 		code: async () => {
@@ -200,85 +184,166 @@ const methods = [
 	}
 ];
 
-function doCrawl(data, lastLeftovers = []) {
-	let work = [];
-	let leftoverWork = [];
-	data.videos.forEach(id => work.push({type: "video", id: id}));
-	data.playlists.forEach(id => work.push({type: "playlist", id: id}));
-	data.channels.forEach(id => work.push({type: "channel", id: id}));
-	work = work.concat(lastLeftovers);
-	if (!work.length) throw new Error("Video crawler was given nothing to crawl");
-	log("Crawling "+work.length+" ids for recommendations");
-	let progress = 0;
-	let max = work.length;
-	let extraWork = 0;
-	function writeProgress(done) {
-		if (config.progressBarMethod == 1) log(progressBar(progress, max + extraWork, 50));
-		if (config.progressBarMethod == 2) process.stdout.write("\r"+progressBar(progress, max + extraWork, 50));
-		if (done) process.stdout.write("\n");
+let submitLocker = new LockManager(10);
+
+async function crawler() {
+	let stop = false;
+
+	const limits = {
+		video: Math.floor(config.crawlLimit * 0.5),
+		channel: Math.floor(config.crawlLimit * 0.3),
+		playlist: Math.floor(config.crawlLimit * 0.2),
+		continuation: config.crawlLimit, // essentially infinite
 	}
-	function enqueue(url, type = "continuation") {
-		if (extraWork >= Math.max(max, 100) || !work.length || (work.length < 10 && work[0].type === "continuation")) {
-			leftoverWork.push({type: type, id: url});
-			return; // Hard cap to avoid blowing up crawling with continuations.
+
+	let work = new Deque();
+	let workStats = { video: 0, playlist: 0, channel: 0, continuation: 0 };
+
+	let submitQueue = { videos: new Set(), channels: new Set(), playlists: new Set() };
+
+	const reporter = (async function reporter() {
+		while (!stop) {
+			report(`work: ${work.length} [${workStats.video}/${workStats.channel}/${workStats.playlist}]+${workStats.continuation}, submit queue: ${submitQueue.videos.size}/${submitQueue.channels.size}/${submitQueue.playlists.size}`);
+			await delay(500);
 		}
-		work.push({type: type, id: url});
-		extraWork++;
+	})().catch(e => { log("Reporter crashed!"); stop = true; throw e; });
+
+	function enqueue(url, type = "continuation", front = false, json = false) {
+		if (!url) throw new Error("Bad URL");
+		if (workStats[type] > limits[type]) return;
+		workStats[type]++;
+		if (front) {
+			work.unshift({type: type, id: url, json: json});
+		} else {
+			work.push({type: type, id: url, json: json});
+		}
 	}
-	if (config.progressBarMethod) writeProgress();
-	let promise;
-	if (config.useInvidious) promise = Promise.all( // FIXME: This is probably definitely broken after changing the way crawling works
-		vidIds.map(async id => {
-			let result;
-			await invidiousLocker.promise();
-			result = await untilItWorks(() => new Promise((resolve, reject) => {
-				rp({
-					url: invidious+"/api/v1/videos/"+id,
-					json: true,
-					timeout: 20000
-				}).then(resolve).catch(err => {
-					if (err.name == "RequestError") {
-						reject(err);
-					} else {
-						log(err);
-						log("=== NAME: "+err.name);
-						resolve(undefined);
+	function dequeue() {
+		if (work.length == 0) {
+			log("Dequeue on empty queue!");
+			return;
+		}
+		let unit = work.shift();
+		workStats[unit.type]--;
+		return unit;
+	}
+
+	const workSeeder = (async function seeder() {
+		while (!stop) {
+			let data = await selectBestMethod();
+			data.videos.forEach(id => enqueue(id, "video"));
+			data.channels.forEach(id => enqueue(id, "channel", true));
+			data.playlists.forEach(id => enqueue(id, "playlist", true));
+
+			do {
+				await delay(1000);
+			} while (work.length > 100);
+		}
+	})().catch(e => { log("Seeder crashed!"); stop = true; throw e; });
+
+	const submitter = (async function submitter() {
+
+		function submit(target, data) {
+			let chunks = [];
+			for (var i = 0; i < data.length; i += 25000) {
+				chunks.push(data.slice(i, i + 25000));
+			}
+			let completedChunks = 0;
+			return Promise.all(chunks.map(async function sendChunk(chunk) {
+				await submitLocker.promise();
+				let res = await untilItWorks(() => fetch(config.master+"/api/"+target+"/submit", {
+					method: "POST",
+					body: JSON.stringify({ [target]: chunk }),
+					headers: {"Content-Type": "application/json"}
+				}).then(res => res.json()).then(results => {
+					submitLocker.unlock();
+					if (!results.inserted) {
+						return Promise.reject("Bad submit result: " + JSON.stringify(results));
 					}
-				});
-			}), { silent: true });
-			invidiousLocker.unlock();
-			progress++;
-			if (config.progressBarMethod && (progress % config.progressFrequency == 0)) writeProgress();
-			return result;
-		})
-	).then(results => {
-		if (config.progressBarMethod) writeProgress(true);
-		let data = {videos: [], channels: []};
-		for (let result of results) {
-			if (result) {
-				data.videos = data.videos.concat(result.recommendedVideos.map(v => v.videoId));
-				data.channels.push(result.authorId);
+					let ins = results.inserted || [];
+					log(`[${++completedChunks}/${chunks.length}] Submitted ${target}: ${chunk.length}, inserted ${ins.length} - [${ins.slice(0,target=="videos"?10:3).join(", ")}${ins.length>(target=="videos"?10:3) ? "..." : ""}]`);
+					return ins;
+				}));
+				for (let item in res) {
+					if (!item) {
+						log(results);
+						throw new Error("Bad item in inserted");
+					}
+				}
+				return res;
+			})).then(results => results.reduce((acc, v) => { return acc.concat(v) }, []));
+		}
+
+		while (!stop) {
+			await delay(10000);
+
+			let videos = [...submitQueue.videos].filter(id => !idCache.seen(id));
+			let channels = [...submitQueue.channels].filter(id => !chanCache.seen(id));
+			let playlists = [...submitQueue.playlists].filter(id => !listCache.seen(id));
+			submitQueue = { videos: new Set(), channels: new Set(), playlists: new Set() };
+
+			log(`Submitting ${videos.length}/${channels.length}/${playlists.length}`);
+
+			await Promise.all([submit("channels", channels), submit("videos", videos), submit("playlists", playlists)]).then(([chan, vids, lists]) => {
+				let crawlVids = vids;
+				let crawlChans = chan;
+				let crawlLists = lists;
+				log(`Submitted ${vids.length}/${chan.length}/${lists.length}`);
+				if (work.length < config.crawlThreshold) {
+					log(`Crawling rest anyway!`);
+					crawlVids = vids.concat(videos);
+					crawlChans = chan.concat(channels);
+					crawlLists = lists.concat(playlists);
+				}
+				try {
+					for (let chan of crawlChans) {
+						enqueue(chan, "channel", true);
+					}
+					for (let list of crawlLists) {
+						enqueue(list, "playlist", true);
+					}
+					for (let vid of crawlVids) {
+						enqueue(vid, "video");
+					}
+				} catch (e) {
+					log(crawlLists, lists, playlists);
+					log(crawlChans, chan, channels);
+					throw e;
+				}
+			});
+		}
+	})().catch(e => { log("Submitter crashed!"); stop = true; throw e; });
+
+	const crawler = (async function crawler() {
+		let ongoing = 0;
+		let data = {videos: new Set(), channels: new Set(), playlists: new Set()};
+		while (!stop) {
+			while (ongoing < config.processConcurrentLimit && work.length) {
+				ongoing++;
+				startNew();
+			}
+			await delay(100);
+			if (data.videos.size) {
+				for (let vid of data.videos)
+					submitQueue.videos.add(vid);
+				data.videos = new Set();
+			}
+			if (data.playlists.size) {
+				for (let list of data.playlists)
+					submitQueue.playlists.add(list);
+				data.playlists = new Set();
+			}
+			if (data.channels.size) {
+				for (let chan of data.channels)
+					submitQueue.channels.add(chan);
+				data.channels = new Set();
 			}
 		}
-		return data;
-	});
-	else promise = new Promise(resolve => {
-		let data = {videos: new Set(), channels: new Set(), playlists: new Set()};
-		let ongoing = 0;
-		while (ongoing < config.processConcurrentLimit && work.length) {
-			ongoing++;
-			startNew();
-		}
 		function callback() {
-			progress++;
-			if (config.progressBarMethod && (progress % config.progressFrequency == 0)) writeProgress();
 			if (work.length) {
 				startNew();
 			} else {
-				if (!--ongoing) {
-					if (config.progressBarMethod) writeProgress(true);
-					resolve({videos: [...data.videos], channels: [...data.channels], playlists: [...data.playlists]});
-				}
+				ongoing--;
 			}
 		}
 		function processBody(body) {
@@ -289,15 +354,17 @@ function doCrawl(data, lastLeftovers = []) {
 				data.videos.add(flatstr(match.slice(-11)));
 			for (let match of body.match(/\b(UC[\w-]{22})(?!\w)/g) || [])
 				data.channels.add(flatstr(match));
-			for (let match of body.match(/\b(PL(?:[0-9A-F]{16}|[\w-]{32})|LL[\w-]{22})(?!\w)/) || [])
+			for (let match of body.match(/\b(PL(?:[0-9A-F]{16}|[\w-]{32})|[LF]L[\w-]{22})(?!\w)/) || [])
 				data.playlists.add(flatstr(match));
 			let cont = body.match(/"(\/browse_ajax?[^"]*)"/);
-			if (cont != null) enqueue(flatstr(cont[1].replace(/&amp;/g, "&")), "continuation");
+			if (cont != null) enqueue(flatstr(cont[1].replace(/&amp;/g, "&")), "continuation", true, true);
 			callback();
 		}
 		function startNew() {
-			let {type, id} = work.pop();
-			let json = false;
+			let {type, id, json} = dequeue();
+			if (!id) {
+				log(unit);
+			}
 			let url;
 			switch (type) {
 			case "video":
@@ -305,15 +372,14 @@ function doCrawl(data, lastLeftovers = []) {
 				break;
 			case "channel":
 				url = `https://www.youtube.com/channel/${id}/playlists?disable_polymer=1`;
-				enqueue("UU" + id.slice(2), "playlist");
-				enqueue("/channel/" + id); // has "Similar channels"
+				enqueue("UU" + id.slice(2), "playlist", true);
+				enqueue("/channel/" + id, "continuation", true); // has "Related channels"
 				break;
 			case "playlist":
 				url = `https://www.youtube.com/playlist?list=${id}&disable_polymer=1`;
 				break;
 			case "continuation":
 				url = "https://www.youtube.com" + id;
-				json = true;
 				break;
 			}
 			untilItWorks(() => rp({
@@ -322,11 +388,9 @@ function doCrawl(data, lastLeftovers = []) {
 				json: json
 			}), { silent: true, maxRetries: 10 }).then(processBody).catch(callback);
 		}
-	});
-	return promise.then(data => {
-		log(`Gathered ${data.videos.length}/${data.channels.length}/${data.playlists.length} recommendations`);
-		return submitAndCrawl(data, leftoverWork);
-	});
+	})().catch(e => { log("Crawler crashed!"); stop = true; throw e; });
+
+	return await Promise.all([workSeeder, crawler, submitter, reporter]);
 }
 
 function selectBestMethod() {
@@ -387,61 +451,16 @@ let idCache = new Cache(config.idCacheSize);
 let chanCache = new Cache(config.channelCacheSize);
 let listCache = new Cache(config.playlistCacheSize);
 
-let tries = 0;
-
-function submitAndCrawl(data, leftoverWork = []) {
-	tries++;
-	if (!(data.videos && data.videos.length)) return;
-	let videos = data.videos.filter(id => !idCache.seen(id));
-	let channels = (data.channels || []).filter(c => !chanCache.seen(c));
-	let playlists = (data.playlists || []).filter(p => !listCache.seen(p));
-
-	function submit(target, data) {
-		let chunks = [];
-		for (var i = 0; i < data.length; i += 25000) {
-			chunks.push(data.slice(i, i + 25000));
-		}
-		let completedChunks = 0;
-		return Promise.all(chunks.map(chunk =>
-			untilItWorks(() => fetch(config.master+"/api/"+target+"/submit", {
-				method: "POST",
-				body: JSON.stringify({ [target]: chunk }),
-				headers: {"Content-Type": "application/json"}
-			}).then(res => res.json()).then(results => {
-				if (!results.inserted) {
-					return Promise.reject("Bad submit result: " + JSON.stringify(results));
-				}
-				let ins = results.inserted || [];
-				log(`[${++completedChunks}/${chunks.length}] Submitted ${target}: ${chunk.length}, inserted ${ins.length} - [${ins.slice(0,target=="videos"?10:3).join(", ")}${ins.length>(target=="videos"?10:3) ? "..." : ""}]`);
-				return ins;
-			}), { timeout: 2000, maxTimeout: 60000 })
-		)).then(results => results.reduce((acc, v) => acc.concat(v), []));
-	}
-
-	return Promise.all([submit("channels", channels), submit("videos", videos), submit("playlists", playlists)]).then(([chan, vids, lists]) => {
-		let len = vids.length + chan.length + lists.length;
-		let crawlVids = vids;
-		let crawlChans = chan;
-		let crawlLists = lists;
-		if (len < config.crawlThreshold && tries <= 10) {
-			log(`Crawling rest anyway! [${tries}/10]`);
-			crawlVids = vids.concat(videos);
-			crawlChans = chan.concat(channels);
-			crawlLists = lists.concat(playlists);
-		}
-		crawlVids = crawlVids.slice(0, Math.floor(config.crawlLimit * 0.5));
-		crawlChans = crawlChans.slice(0, Math.floor(config.crawlLimit * 0.3));
-		crawlLists = crawlLists.slice(0, Math.floor(config.crawlLimit * 0.2));
-		if (crawlVids.length + crawlChans.length + crawlLists.length > 0)
-			return doCrawl({videos: crawlVids, channels: crawlChans, playlists: crawlLists}, leftoverWork);
-	});
-}
-
 async function run() {
-	while (true) {
-		let data = await selectBestMethod();
-		tries = 0;
-		await submitAndCrawl(data);
+	try {
+		await crawler();
+	} catch (e) {
+		log("Crawler crashed!");
+		console.log(e);
+		return;
 	}
+
+	log("ERROR: Crawler exited, somehow!");
+	return;
 }
 run();

@@ -83,7 +83,7 @@ SPACES_ENDPOINT = CONFIG.endpoint
 s3_client = Awscr::S3::Client.new(REGION, ACCESS_KEY, SECRET_KEY, endpoint: "https://#{REGION}.#{SPACES_ENDPOINT}")
 finished_batches = File.read("completed.txt").split("\n")
 
-s3_client.list_objects(BUCKET, max_keys: 120000).each do |resp|
+s3_client.list_objects(BUCKET, max_keys: 300000).each do |resp|
   resp.contents.map(&.key).each do |key|
     if finished_batches.includes? key
       puts "Skipping #{key}"

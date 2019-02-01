@@ -50,6 +50,24 @@ function delay(time) {
 	return new Promise(resolve => setTimeout(() => resolve(), time));
 }
 
+function spacesUpload(url, data, lastDelay = 0) {
+	return rp({
+		url: url,
+		method: "PUT",
+		body: data,
+		headers: {
+			"Content-Type": "application/gzip"
+		}
+	}).catch(err => {
+		if (err.constructor.name == "StatusCodeError") {
+			lastDelay += 4000;
+			return delay(lastDelay).then(() => spacesUpload(url, data, lastDelay));
+		} else {
+			throw err;
+		}
+	});
+}
+
 class LockManager {
 	constructor(debug) {
 		this.debug = debug;
@@ -276,14 +294,7 @@ class BatchProcess {
 			}
 			if (commitResponse.upload_url) {
 				process.stdout.write("uploading... ");
-				await rp({
-					url: commitResponse.upload_url,
-					method: "PUT",
-					body: gzipData,
-					headers: {
-						"Content-Type": "application/gzip"
-					}
-				});
+				await spacesUpload(commitResponse.upload_url, gzipData);
 				process.stdout.write("finalising... ");
 				await this.worker.workerRequest("/api/finalize", {body: {batch_id: this.batchID}});
 				process.stdout.write("done.\n");
@@ -340,7 +351,7 @@ class AnnotationProcess {
 	}
 	run() {
 		let backend = this.parent.worker.config.annotationFetchBackend;
-		let url = "https://www.youtube.com/annotations_invideo?video_id="+this.id;
+		let url = "https://www.youtube.com/watch?gl=US&hl=en&disable_polymer=1&v="+this.id;
 		if (backend == "fetch") {
 			fetch(url).then(response => {
 				response.text().then(text => {
