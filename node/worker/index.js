@@ -1,7 +1,7 @@
 const rp = require("request-promise-native");
+const request = require("request");
 const fs = require("fs");
 const zlib = require("zlib");
-const sqlite = require("sqlite");
 const fetch = require("node-fetch");
 const http = require("http");
 const dnscache = require("dnscache")({
@@ -9,6 +9,7 @@ const dnscache = require("dnscache")({
 	ttl: 600,
 	cachesize: 100
 });
+const child = require("child_process");
 
 const config = "./node/worker/config.json";
 
@@ -50,21 +51,25 @@ function delay(time) {
 	return new Promise(resolve => setTimeout(() => resolve(), time));
 }
 
-function spacesUpload(url, data, lastDelay = 0) {
-	return rp({
-		url: url,
-		method: "PUT",
-		body: data,
-		headers: {
-			"Content-Type": "application/gzip"
-		}
-	}).catch(err => {
-		if (err.constructor.name == "StatusCodeError") {
-			lastDelay += 4000;
-			return delay(lastDelay).then(() => spacesUpload(url, data, lastDelay));
-		} else {
-			throw err;
-		}
+function spacesUpload(url, stream, length, lastDelay = 0) {
+	return new Promise(resolve => {
+		stream.pipe(request({
+			url: url,
+			method: "PUT",
+			headers: {
+				"Content-Type": "application/gzip",
+				"Content-Length": length
+			}
+		})).on("response", response => {
+			if (!response.statusCode.toString().startsWith("2")) {
+				console.log("received status code "+response.statusCode);
+				console.log(response.body);
+				lastDelay += 4000;
+				resolve(delay(lastDelay).then(() => spacesUpload(url, stream, length, lastDelay)));
+			} else {
+				resolve();
+			}
+		});
 	});
 }
 
@@ -107,7 +112,6 @@ class LockManager {
 		return new Promise(resolve => this.waitForUnlock(resolve));
 	}
 }
-const dbLockManager = new LockManager();
 
 class SendableObject {
 	constructor(url, object) {
@@ -144,8 +148,6 @@ class Worker {
 			}
 			this.ready = false;
 			this.batchProcesses = [];
-			this.db = await sqlite.open(this.config.db);
-			await this.db.run("CREATE TABLE IF NOT EXISTS Cache (videoID TEXT, data TEXT, PRIMARY KEY (videoID))");
 			this.run();
 			resolve();
 		});
@@ -209,104 +211,92 @@ class BatchProcess {
 	async run() {
 		while (true) {
 			let batch = await this.getBatch();
-			fetch("https://cadence.moe/api/ytaa/"+this.worker._worker+"/"+this.batchID).catch(new Function());
-			console.log("Batch "+this.batchID+" contains "+batch.length+" items");
-			let total = batch.length;
-			let results = {};
 			{
-				process.stdout.write("Checking cache... ");
-				let paramLimit = this.worker.config.sqliteHostParamLimit;
-				let promises = [];
-				let collected = 0;
-				for (let i = 0; i < batch.length; i += paramLimit) {
-					let batchFragment = batch.slice(i, i+paramLimit);
-					let statement = "SELECT * FROM Cache WHERE videoID IN ("+",?".repeat(batchFragment.length).slice(1)+")";
-					promises.push(this.worker.db.all(statement, batchFragment).then(rows => {
-						collected += rows.length;
-						for (let row of rows) {
-							results[row.videoID] = row.data;
-							let index = batch.indexOf(row.videoID);
-							if (index != -1) batch.splice(index, 1);
+				fetch("https://cadence.moe/api/ytaa/"+this.worker._worker+"/"+this.batchID).catch(new Function());
+				console.log("Batch "+this.batchID+" contains "+batch.length+" items");
+				let total = batch.length;
+				let results = {};
+				console.log("Cache functionality removed.");
+				console.log("Downloading annotation data...");
+				let completed = Object.keys(results).length;
+				const drawProgress = override => {
+					if (override || completed % this.worker.config.progressFrequency == 0) {
+						console.log(progressBar(completed, total, 50));
+					}
+				}
+				drawProgress(true);
+				let remainingProcesses = 0;
+				await new Promise(resolve => {
+					const callback = (id, response) => {
+						results[id] = response;
+						completed++;
+						drawProgress();
+						if (batch.length) new AnnotationProcess(this, batch.pop(), callback);
+						else if (--remainingProcesses == 0) resolve();
+					}
+					for (let i = 0; i < this.worker.config.annotationConcurrentLimit; i++) {
+						if (batch.length) {
+							remainingProcesses++;
+							new AnnotationProcess(this, batch.pop(), callback);
 						}
-					}));
-				}
-				await Promise.all(promises);
-				process.stdout.write(`done, retrieved ${collected} items\n`);
-			}
-			console.log("Downloading annotation data...");
-			let completed = Object.keys(results).length;
-			let cacheBuffer = [];
-			const drawProgress = override => {
-				if (override || completed % this.worker.config.progressFrequency == 0) {
-					console.log(progressBar(completed, total, 50));
-				}
-			}
-			drawProgress(true);
-			let remainingProcesses = 0;
-			const performDBWrite = async (abortOnLock) => {
-				if (abortOnLock && dbLockManager.locked) return;
-				await dbLockManager.promise();
-				await this.worker.db.run("BEGIN TRANSACTION");
-				await Promise.all(cacheBuffer.map(id => this.worker.db.run("INSERT OR IGNORE INTO Cache VALUES (?, ?)", [id, results[id]])));
-				await this.worker.db.run("END TRANSACTION");
-				cacheBuffer = [];
-				dbLockManager.unlock();
-			}
-			await new Promise(resolve => {
-				const callback = (id, response) => {
-					results[id] = response;
-					cacheBuffer.push(id);
-					if (cacheBuffer.length >= this.worker.config.cacheFrequency) {
-						performDBWrite(true);
 					}
-					completed++;
-					drawProgress();
-					if (batch.length) new AnnotationProcess(this, batch.pop(), callback);
-					else if (--remainingProcesses == 0) resolve();
-				}
-				for (let i = 0; i < this.worker.config.annotationConcurrentLimit; i++) {
-					if (batch.length) {
-						remainingProcesses++;
-						new AnnotationProcess(this, batch.pop(), callback);
-					}
-				}
-				if (remainingProcesses == 0) resolve();
-			});
-			drawProgress(true);
-			process.stdout.write("\n");
-			await performDBWrite();
-			console.log("All annotations fetched");
-			let toCompress = JSON.stringify(results);
-			process.stdout.write("Compressing "+(toCompress.length/1e6).toFixed(1)+"MB of data... ");
-			let gzipData = await new Promise(resolve => zlib.gzip(toCompress, (err, buf) => {
-				if (err) throw err;
-				resolve(buf);
-			}));
-			process.stdout.write("done, new size is "+(gzipData.length/1e6).toFixed(1)+" MB\n");
-			process.stdout.write("Committing... ");
-			let commitResponse = await this.worker.workerRequest("/api/commit", {body: {batch_id: this.batchID, content_size: gzipData.length}});
+					if (remainingProcesses == 0) resolve();
+				});
+				drawProgress(true);
+				process.stdout.write("\n");
+				console.log("All annotations fetched, dumping to disk");
+				let writeStream = fs.createWriteStream("dump.json", {encoding: "utf8"});
+				writeStream.write("{");
+				let keys = Object.keys(results);
+				let i = 0;
+				await new Promise(resolve => {
+					(function write() {
+						let ok = true;
+						while (i < keys.length && ok) {
+							let key = keys[i];
+							writeStream.write('"'+key+'":');
+							let string = results[key];
+							string = string.replace(/("|\\)/g, "\\$1").replace(/\n/msg, "\\n");
+							ok = writeStream.write('"'+string+'"');
+							if (i != keys.length-1) writeStream.write(",");
+							i++;
+							if (ok) process.stdout.write(" ");
+						}
+						if (!ok) {
+							writeStream.once("drain", write);
+						} else {
+							writeStream.write("}");
+							writeStream.end();
+							writeStream.on("finish", resolve);
+						}
+					})();
+				});
+			}
+			let oldSize = fs.statSync("dump.json").size;
+			console.log("Dumped "+(oldSize/1e6).toFixed(1)+" MB, gzipping...");
+			await new Promise(resolve => child.exec("gzip dump.json", resolve));
+			let newSize = fs.statSync("dump.json.gz").size;
+			console.log("Done, new size is "+(newSize/1e6).toFixed(1)+" MB\n");
+			console.log("Committing... ");
+			let commitResponse = await this.worker.workerRequest("/api/commit", {body: {batch_id: this.batchID, content_size: newSize}});
 			if (commitResponse.error_code) {
 				if (commitResponse.error_code == 8) {
-					console.log("\nDumping failed batch to disk: batch.json.gz");
-					await new Promise(resolve => fs.writeFile("batch.json.gz", gzipData, {encoding: null}, resolve));
+					console.log("\nDumping failed batch to disk: dump.json.gz");
 				}
 				throw new Error(commitResponse.error);
 			}
 			if (commitResponse.upload_url) {
-				process.stdout.write("uploading... ");
-				await spacesUpload(commitResponse.upload_url, gzipData);
-				process.stdout.write("finalising... ");
+				console.log("uploading... ");
+				let stream = fs.createReadStream("dump.json.gz", {encoding: null});
+				await spacesUpload(commitResponse.upload_url, stream, newSize);
+				console.log("finalising... ");
 				await this.worker.workerRequest("/api/finalize", {body: {batch_id: this.batchID}});
-				process.stdout.write("done.\n");
+				console.log("done.\n");
 			} else {
-				process.stdout.write("done, no upload required.\n");
+				console.log("done, no upload required.\n");
 			}
 			if (this.worker.config.eraseDB) {
-				await dbLockManager.promise();
-				process.stdout.write("Wiping cache database... ");
-				await this.worker.db.run("DELETE FROM Cache");
-				process.stdout.write("done.\n");
-				dbLockManager.unlock();
+				fs.unlinkSync("dump.json.gz");
 			}
 			void 0;
 		}
