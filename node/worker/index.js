@@ -341,7 +341,7 @@ class AnnotationProcess {
 	}
 	run() {
 		let backend = this.parent.worker.config.annotationFetchBackend;
-		let url = "https://www.youtube.com/watch?v="+this.id;
+		let url = "https://www.youtube.com/watch?gl=US&hl=en&disable_polymer=1&v="+this.id;
 		if (backend == "fetch") {
 			fetch(url).then(response => {
 				response.text().then(text => {
