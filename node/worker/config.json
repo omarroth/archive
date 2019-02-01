@@ -5,11 +5,11 @@
    "db": "./cache.db",
    "eraseDB": true,
    "forceRetryAllErrors": true,
-   "master": "https://archive.omar.yt",
+   "master": "https://credits.omar.yt",
    "progressFrequency": 10,
    "silenceErrors": false,
    "sqliteHostParamLimit": 900,
-   "s3_url": "https://yt-annotation-archive.sfo2.digitaloceanspaces.com",
+   "s3_url": "https://yt-credits.ams.digitaloceanspaces.com",
    "workers": [
    ]
 }
