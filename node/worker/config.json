@@ -9,7 +9,7 @@
    "progressFrequency": 10,
    "silenceErrors": false,
    "sqliteHostParamLimit": 900,
-   "s3_url": "https://yt-credits.ams.digitaloceanspaces.com",
+   "s3_url": "https://yt-credits.ams3.digitaloceanspaces.com/",
    "workers": [
    ]
 }
